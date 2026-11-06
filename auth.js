@@ -19,4 +19,4 @@ async function requireAuth(role) {
   return p;
 }
 
-async function logout() { await db.auth.signOut(); location.replace("login.html"); }
+async function logout() { await db.auth.signOut(); location.replace("index.html"); }
