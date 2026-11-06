@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<nav class="sidebar" id="sb" aria-label="Main"></nav>
+<main class="main" id="content">
+  <div class="topbar">
+    <button class="btn btn-outline-secondary d-lg-none" aria-label="Open menu" onclick="sb.classList.toggle('open')"><i class="bi bi-list"></i></button>
+    <h1 class="h4 mb-0">Sales</h1><span id="who" class="text-muted small"></span>
+  </div>
+  <div id="denied" class="alert alert-warning d-none" role="alert">You do not have permission to record sales. Ask the owner to enable it.</div>
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-lg-4"><div class="stat"><i class="bi bi-cash-stack"></i><div><div class="stat-label">Sales today</div><div class="stat-value" id="tToday">—</div></div></div></div>
+    <div class="col-6 col-lg-4"><div class="stat"><i class="bi bi-calendar-check"></i><div><div class="stat-label">Sales this month</div><div class="stat-value" id="tMonth">—</div></div></div></div>
+    <div class="col-12 col-lg-4 d-flex align-items-center justify-content-lg-end"><button class="btn btn-brand btn-lg" id="btnNew"><i class="bi bi-plus-lg"></i> New sale</button></div>
+  </div>
+  <div class="panel mb-3"><div class="row g-2">
+    <div class="col-md-3"><label class="form-label small" for="fq">Transaction number</label><input id="fq" class="form-control" placeholder="e.g. TXN-2026"></div>
+    <div class="col-6 col-md-2"><label class="form-label small" for="fFrom">From</label><input id="fFrom" type="date" class="form-control"></div>
+    <div class="col-6 col-md-2"><label class="form-label small" for="fTo">To</label><input id="fTo" type="date" class="form-control"></div>
+    <div class="col-md-3"><label class="form-label small" for="fProd">Product</label><select id="fProd" class="form-select"><option value="">All products</option></select></div>
+    <div class="col-md-2 owner-only d-none"><label class="form-label small" for="fStaff">Staff</label><select id="fStaff" class="form-select"><option value="">All staff</option></select></div>
+    <div class="col-md-2"><label class="form-label small" for="fStatus">Status</label><select id="fStatus" class="form-select"><option value="">All</option><option value="completed">Completed</option><option value="reversed">Reversed</option></select></div>
+  </div></div>
+  <div class="panel"><div class="table-responsive"><table class="table table-sm align-middle">
+    <caption class="visually-hidden">Sales, newest first</caption>
+    <thead><tr><th>Transaction</th><th>Date</th><th>Product</th><th class="text-end">Packs</th><th class="text-end">Total</th><th>Payment</th><th>Staff</th><th>Status</th><th></th></tr></thead>
+    <tbody id="rows"></tbody></table></div>
+    <div class="d-flex justify-content-between align-items-center"><span class="small text-muted" id="count"></span>
+    <div class="btn-group"><button class="btn btn-outline-secondary btn-sm" id="prev">Previous</button><button class="btn btn-outline-secondary btn-sm" id="next">Next</button></div></div>
+  </div>
+</main>
+
+<div class="modal fade" id="mSale" tabindex="-1" aria-labelledby="mSaleT"><div class="modal-dialog"><form class="modal-content" id="fSale" novalidate>
+  <div class="modal-header"><h2 class="modal-title h5" id="mSaleT">New sale</h2><button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="row g-3">
+    <div class="col-12"><label class="form-label" for="prod">Product *</label><select id="prod" class="form-select" required></select><div class="form-text" id="avail" aria-live="polite"></div></div>
+    <div class="col-6"><label class="form-label" for="qty">Packs sold *</label><input id="qty" type="number" min="1" step="1" class="form-control" required></div>
+    <div class="col-6"><label class="form-label" for="price">Price per pack (₦) *</label><input id="price" type="number" min="0" step="0.01" class="form-control" required></div>
+    <div class="col-12"><div class="alert alert-secondary py-2 mb-0" aria-live="polite">Total: <strong id="total">₦0.00</strong></div></div>
+    <div class="col-6"><label class="form-label" for="pay">Payment method *</label><select id="pay" class="form-select"><option value="cash">Cash</option><option value="transfer">Bank transfer</option><option value="pos">POS</option><option value="credit">On credit (pay later)</option></select></div>
+    <div class="col-6"><label class="form-label" for="sdate">Sale date</label><input id="sdate" type="date" class="form-control"></div>
+    <div class="col-12"><label class="form-label" for="cid">Registered customer <span class="text-muted" id="cidHint">(optional)</span></label><select id="cid" class="form-select"></select></div>
+    <div class="col-12 d-none" id="paidWrap"><label class="form-label" for="paid">Amount paid now (₦)</label><input id="paid" type="number" min="0" step="0.01" value="0" class="form-control"><div class="form-text" aria-live="polite">Balance owed on this sale: <strong id="owed">₦0.00</strong></div></div>
+    <div class="col-12" id="walkWrap"><label class="form-label" for="cust">Or walk-in customer name (optional)</label><input id="cust" class="form-control"></div>
+    <div class="col-12"><label class="form-label" for="notes">Notes</label><textarea id="notes" class="form-control" rows="2"></textarea></div>
+  </div></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-brand" id="save">Record sale</button></div>
+</form></div></div>
+
+<div class="modal fade" id="mRec" tabindex="-1" aria-labelledby="mRecT"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h2 class="modal-title h5" id="mRecT">Sale details</h2><button class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="receipt"></div>
+  <div class="modal-footer"><button class="btn btn-outline-danger d-none" id="btnRev">Reverse sale</button><button class="btn btn-brand" id="btnPrint"><i class="bi bi-printer"></i> Print receipt</button></div>
+</div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script><script src="js/auth.js"></script><script src="js/utils.js"></script><script src="js/layout.js"></script>
+<script>
+const $ = id => document.getElementById(id), PAGE = 10, PAY = { cash: "Cash", transfer: "Bank transfer", pos: "POS", credit: "On credit" };
+let page = 0, me, prods = [], rows = [], key = crypto.randomUUID(), cur = null;
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos" }).format(new Date());
+const month = today.slice(0, 7) + "-01";
+const modal = id => bootstrap.Modal.getOrCreateInstance($(id));
+const badge = s => s === "reversed" ? '<span class="badge text-bg-secondary">Reversed</span>' : '<span class="badge text-bg-success">Completed</span>';
+
+async function totals() {
+  const t = await db.from("sales_view").select("total").eq("status", "completed").eq("sale_date", today);
+  const m = await db.from("sales_view").select("total").eq("status", "completed").gte("sale_date", month);
+  const sum = r => (r.data || []).reduce((a, x) => a + Number(x.total), 0);
+  $("tToday").textContent = naira(sum(t)); $("tMonth").textContent = naira(sum(m));
+}
+
+async function load() {
+  let q = db.from("sales_view").select("*", { count: "exact" });
+  const s = $("fq").value.trim().replace(/[,()%]/g, ""); if (s) q = q.ilike("ref", "%" + s + "%");
+  if ($("fFrom").value) q = q.gte("sale_date", $("fFrom").value); if ($("fTo").value) q = q.lte("sale_date", $("fTo").value);
+  if ($("fProd").value) q = q.eq("product_id", $("fProd").value); if ($("fStaff").value) q = q.eq("created_by", $("fStaff").value);
+  if ($("fStatus").value) q = q.eq("status", $("fStatus").value);
+  const { data, count, error } = await q.order("created_at", { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
+  if (error) return toast(error.message, "error");
+  rows = data;
+  $("rows").innerHTML = data.map(r => "<tr><td>" + esc(r.ref) + "</td><td>" + fmtDate(r.sale_date) + "</td><td>" + esc(r.product_name) + '</td><td class="text-end">' + num(r.qty) +
+    '</td><td class="text-end fw-semibold">' + naira(r.total) + "</td><td>" + esc(PAY[r.payment_method]) + "</td><td>" + esc(r.staff_name || "—") + "</td><td>" + badge(r.status) +
+    '</td><td><button class="btn btn-sm btn-outline-secondary" data-v="' + r.id + '">View</button></td></tr>').join("") || '<tr><td colspan="9" class="text-center text-muted py-4">No sales found.</td></tr>';
+  $("count").textContent = count ? "Showing " + (page * PAGE + 1) + "-" + Math.min((page + 1) * PAGE, count) + " of " + count : "";
+  $("prev").disabled = page === 0; $("next").disabled = (page + 1) * PAGE >= count;
+}
+const reload = () => { page = 0; load(); };
+
+async function loadProducts() {
+  const { data } = await db.from("products_status").select("id,name,sku,selling_price,current_stock").eq("is_archived", false).order("name"); prods = data || [];
+  $("prod").innerHTML = '<option value="">Select product</option>' + prods.map(p => '<option value="' + p.id + '"' + (p.current_stock === 0 ? " disabled" : "") + ">" + esc(p.name) + " (" + num(p.current_stock) + " left)" + (p.current_stock === 0 ? " - OUT OF STOCK" : "") + "</option>").join("");
+  $("fProd").innerHTML = '<option value="">All products</option>' + prods.map(p => '<option value="' + p.id + '">' + esc(p.name) + "</option>").join("");
+}
+async function loadCustomers() {
+  const { data } = await db.from("customers").select("id,name,phone").order("name");
+  $("cid").innerHTML = '<option value="">None / walk-in</option>' + (data || []).map(c => '<option value="' + c.id + '">' + esc(c.name) + (c.phone ? " (" + esc(c.phone) + ")" : "") + "</option>").join("");
+}
+function calc() {
+  const p = prods.find(x => x.id == $("prod").value), q = parseInt($("qty").value) || 0, tot = q * (+$("price").value || 0);
+  $("total").textContent = naira(tot);
+  $("avail").textContent = p ? "Available: " + num(p.current_stock) + " packs" + (q > p.current_stock ? ". You are selling more than is available." : "") : "";
+  $("owed").textContent = naira(Math.max(0, tot - (+$("paid").value || 0)));
+}
+function togglePay() {
+  const credit = $("pay").value === "credit";
+  $("paidWrap").classList.toggle("d-none", !credit); $("walkWrap").classList.toggle("d-none", credit);
+  $("cidHint").textContent = credit ? "(required for credit)" : "(optional)"; calc();
+}
+$("prod").addEventListener("change", () => { const p = prods.find(x => x.id == $("prod").value); if (p) { $("price").value = p.selling_price; $("qty").max = p.current_stock; } calc(); });
+["qty", "price", "paid"].forEach(i => $(i).addEventListener("input", calc)); $("pay").addEventListener("change", togglePay);
+$("btnNew").onclick = () => { $("fSale").reset(); $("sdate").value = today; togglePay(); modal("mSale").show(); };
+
+$("fSale").addEventListener("submit", async e => {
+  e.preventDefault();
+  const p = prods.find(x => x.id == $("prod").value), q = parseInt($("qty").value), credit = $("pay").value === "credit", tot = q * (+$("price").value || 0);
+  if (!p) return toast("Choose a product.", "error");
+  if (!(q > 0)) return toast("Enter at least 1 pack.", "error");
+  if (q > p.current_stock) return toast("Only " + p.current_stock + " pack(s) of " + p.name + " left.", "error");
+  if ($("price").value === "") return toast("Enter the price per pack.", "error");
+  if (credit && !$("cid").value) return toast("Choose the customer for a credit sale. Add them on the Customers page first.", "error");
+  if (credit && ((+$("paid").value || 0) > tot || (+$("paid").value || 0) < 0)) return toast("The amount paid now cannot be more than the total.", "error");
+  $("save").disabled = true;
+  const { data: id, error } = await db.rpc("record_sale", { p_product_id: p.id, p_qty: q, p_unit_price: +$("price").value, p_payment: $("pay").value,
+    p_customer: $("cust").value.trim() || null, p_sale_date: $("sdate").value || null, p_notes: $("notes").value.trim() || null, p_client_key: key,
+    p_customer_id: $("cid").value ? +$("cid").value : null, p_amount_paid: credit ? (+$("paid").value || 0) : null });
+  $("save").disabled = false;
+  if (error) return toast(error.message, "error");
+  toast("Sale recorded. Stock updated."); key = crypto.randomUUID(); modal("mSale").hide();
+  await loadProducts(); totals(); load();
+  const { data } = await db.from("sales_view").select("*").eq("id", id).single(); if (data) showReceipt(data);
+});
+
+function showReceipt(r) {
+  cur = r; const line = (k, v) => "<tr><th class='fw-normal text-muted'>" + k + "</th><td class='text-end'>" + v + "</td></tr>";
+  const credit = r.payment_method === "credit";
+  $("receipt").innerHTML = '<div class="text-center mb-2"><strong>' + esc(window.APP_CONFIG.STORE_NAME) + '</strong><div class="small text-muted">Sales receipt</div></div><table class="table table-sm mb-2">' +
+    line("Transaction", esc(r.ref)) + line("Date", fmtDate(r.sale_date)) + line("Product", esc(r.product_name)) + line("Quantity", num(r.qty) + " pack(s)") + line("Price per pack", naira(r.unit_price)) +
+    line("<strong>Total</strong>", "<strong>" + naira(r.total) + "</strong>") + line("Payment", esc(PAY[r.payment_method])) +
+    (credit ? line("Paid now", naira(r.amount_paid)) + line("<strong>Balance owed</strong>", "<strong>" + naira(r.total - r.amount_paid) + "</strong>") : "") +
+    (r.customer_name ? line("Customer", esc(r.customer_name)) : "") +
+    line("Served by", esc(r.staff_name || "—")) + line("Status", r.status === "reversed" ? "REVERSED" : "Completed") + "</table>" +
+    (r.status === "reversed" ? '<div class="alert alert-secondary py-2 mb-0">Reversed. Reason: ' + esc(r.reverse_reason) + "</div>" : '<p class="text-center small mb-0">Thank you for your patronage.</p>');
+  $("btnRev").classList.toggle("d-none", !(me.role === "owner" && r.status === "completed")); modal("mRec").show();
+}
+$("rows").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) showReceipt(rows.find(x => x.id == b.dataset.v)); });
+$("btnPrint").onclick = () => window.print();
+$("btnRev").onclick = async () => {
+  const reason = prompt("Why are you reversing sale " + cur.ref + "? (required)"); if (!reason) return;
+  if (!confirm("Reverse this sale? " + cur.qty + " pack(s) of " + cur.product_name + " will go back into stock.")) return;
+  const { error } = await db.rpc("reverse_sale", { p_sale_id: cur.id, p_reason: reason });
+  if (error) return toast(error.message, "error");
+  toast("Sale reversed. Stock restored."); modal("mRec").hide(); await loadProducts(); totals(); load();
+};
+
+["fFrom", "fTo", "fProd", "fStaff", "fStatus"].forEach(i => $(i).addEventListener("change", reload));
+let t; $("fq").addEventListener("input", () => { clearTimeout(t); t = setTimeout(reload, 300); });
+$("prev").onclick = () => { page--; load(); }; $("next").onclick = () => { page++; load(); };
+
+(async () => {
+  me = await requireAuth(); if (!me) return; renderShell("sales", me);
+  if (me.role === "owner") {
+    document.querySelectorAll(".owner-only").forEach(x => x.classList.remove("d-none"));
+    const s = await db.from("profiles").select("id,full_name").order("full_name");
+    $("fStaff").innerHTML += (s.data || []).map(x => '<option value="' + x.id + '">' + esc(x.full_name) + "</option>").join("");
+  } else {
+    const { data } = await db.from("staff_permissions").select("can_record_sales").eq("user_id", me.id).single();
+    if (!data || !data.can_record_sales) { $("denied").classList.remove("d-none"); $("btnNew").classList.add("d-none"); }
+  }
+  await loadProducts(); await loadCustomers(); totals(); load();
+})();
+</script>
+</body>
+</html>

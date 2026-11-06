@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Products</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<nav class="sidebar" id="sb"></nav>
+<main class="main">
+  <div class="topbar">
+    <button class="btn btn-outline-secondary d-lg-none" onclick="sb.classList.toggle('open')"><i class="bi bi-list"></i></button>
+    <h1 class="h4 mb-0">Products</h1><span id="who" class="text-muted small"></span>
+  </div>
+  <div class="panel mb-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3"><input id="q" class="form-control" placeholder="Search name, brand or code"></div>
+      <div class="col-6 col-md-2"><select id="fBrand" class="form-select"><option value="">All brands</option></select></div>
+      <div class="col-6 col-md-2"><select id="fCat" class="form-select"><option value="">All categories</option></select></div>
+      <div class="col-6 col-md-2"><select id="fStatus" class="form-select"><option value="">Any stock level</option><option value="low">Low stock</option><option value="out">Out of stock</option></select></div>
+      <div class="col-6 col-md-1"><select id="sort" class="form-select"><option value="name.asc">A-Z</option><option value="name.desc">Z-A</option><option value="current_stock.asc">Stock ↑</option><option value="current_stock.desc">Stock ↓</option><option value="selling_price.desc">Price ↓</option><option value="created_at.desc">Newest</option></select></div>
+      <div class="col-12 col-md-2 d-flex gap-2 justify-content-md-end owner-only d-none">
+        <button class="btn btn-outline-secondary" id="btnCat" title="Manage categories"><i class="bi bi-tags"></i></button>
+        <button class="btn btn-brand" id="btnAdd"><i class="bi bi-plus-lg"></i> Add product</button>
+      </div>
+    </div>
+    <div class="form-check form-switch mt-2"><input class="form-check-input" type="checkbox" id="fArch"><label class="form-check-label small" for="fArch">Show archived products</label></div>
+  </div>
+  <div class="panel">
+    <div class="table-responsive"><table class="table align-middle">
+      <thead><tr><th>Code</th><th>Product</th><th>Category</th><th class="text-end">Selling price</th><th class="text-end cost-col d-none">Cost price</th><th class="text-end">Left (packs)</th><th>Status</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <div class="d-flex justify-content-between align-items-center"><span class="small text-muted" id="count"></span>
+      <div class="btn-group"><button class="btn btn-outline-secondary btn-sm" id="prev">Previous</button><button class="btn btn-outline-secondary btn-sm" id="next">Next</button></div></div>
+  </div>
+</main>
+
+<div class="modal fade" id="mProd" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" id="fProd">
+  <div class="modal-header"><h5 class="modal-title" id="mTitle">Add product</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="row g-3">
+    <div class="col-md-6"><label class="form-label">Product name *</label><input id="name" class="form-control" required></div>
+    <div class="col-md-3"><label class="form-label">Code (SKU) *</label><input id="sku" class="form-control" required></div>
+    <div class="col-md-3"><label class="form-label">Brand</label><input id="brand" class="form-control"></div>
+    <div class="col-md-4"><label class="form-label">Category</label><select id="cat" class="form-select"></select></div>
+    <div class="col-md-4"><label class="form-label">Selling price (₦ per pack) *</label><input id="sell" type="number" min="0" step="0.01" class="form-control" required></div>
+    <div class="col-md-4"><label class="form-label">Purchase price (₦ per pack) *</label><input id="buy" type="number" min="0" step="0.01" class="form-control" required></div>
+    <div class="col-md-4"><label class="form-label">Opening stock (packs)</label><input id="open" type="number" min="0" step="1" value="0" class="form-control"><div class="form-text d-none" id="openNote">Change stock with Stock In or Adjustments.</div></div>
+    <div class="col-md-4"><label class="form-label">Low-stock level (packs)</label><input id="min" type="number" min="0" step="1" value="10" class="form-control"></div>
+    <div class="col-12"><label class="form-label">Description</label><textarea id="desc" class="form-control" rows="2"></textarea></div>
+  </div></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-brand" id="save">Save product</button></div>
+</form></div></div>
+
+<div class="modal fade" id="mView" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title" id="vTitle"></h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="vBody"></div></div></div></div>
+
+<div class="modal fade" id="mCat" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title">Categories</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="input-group mb-3"><input id="newCat" class="form-control" placeholder="New category name"><button class="btn btn-brand" id="addCat">Add</button></div><ul class="list-group" id="catList"></ul></div></div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script><script src="js/auth.js"></script><script src="js/utils.js"></script><script src="js/layout.js"></script>
+<script>
+const PAGE = 10; let page = 0, me, editing = null, cats = [], rowsData = [];
+const $ = id => document.getElementById(id);
+const mProd = () => bootstrap.Modal.getOrCreateInstance($("mProd"));
+
+async function loadFilters() {
+  const c = await db.from("categories").select("*").order("name"); cats = c.data || [];
+  const opts = cats.map(x => '<option value="' + x.id + '">' + esc(x.name) + "</option>").join("");
+  $("fCat").innerHTML = '<option value="">All categories</option>' + opts;
+  $("cat").innerHTML = '<option value="">Uncategorised</option>' + opts;
+  const b = await db.from("products_status").select("brand").not("brand", "is", null);
+  const brands = [...new Set((b.data || []).map(r => r.brand))].sort();
+  const cur = $("fBrand").value;
+  $("fBrand").innerHTML = '<option value="">All brands</option>' + brands.map(x => '<option>' + esc(x) + "</option>").join(""); $("fBrand").value = cur;
+}
+
+async function load() {
+  const [col, dir] = $("sort").value.split(".");
+  let q = db.from("products_status").select("*", { count: "exact" }).eq("is_archived", $("fArch").checked);
+  const s = $("q").value.trim().replace(/[,()%]/g, " ");
+  if (s) q = q.or("name.ilike.%" + s + "%,brand.ilike.%" + s + "%,sku.ilike.%" + s + "%");
+  if ($("fBrand").value) q = q.eq("brand", $("fBrand").value);
+  if ($("fCat").value) q = q.eq("category_id", $("fCat").value);
+  if ($("fStatus").value) q = q.eq("status", $("fStatus").value);
+  const { data, count, error } = await q.order(col, { ascending: dir === "asc" }).range(page * PAGE, page * PAGE + PAGE - 1);
+  if (error) return toast(error.message, "error");
+  rowsData = data; const owner = me.role === "owner";
+  $("rows").innerHTML = data.length ? data.map(r => "<tr><td>" + esc(r.sku) + "</td><td><a href='#' data-v='" + r.id + "'>" + esc(r.name) + "</a><div class='small text-muted'>" + esc(r.brand) + "</div></td><td>" + esc(r.category_name || "—") + "</td>" +
+    '<td class="text-end">' + naira(r.selling_price) + "</td>" + (owner ? '<td class="text-end">' + naira(r.purchase_price) + "</td>" : "") +
+    '<td class="text-end fw-semibold">' + num(r.current_stock) + "</td><td>" + statusBadge(r.status) + "</td><td class='text-end text-nowrap'>" +
+    (owner ? "<button class='btn btn-sm btn-outline-secondary me-1' data-e='" + r.id + "'><i class='bi bi-pencil'></i></button><button class='btn btn-sm btn-outline-" + (r.is_archived ? "success" : "danger") + "' data-a='" + r.id + "'>" + (r.is_archived ? "Restore" : "Archive") + "</button>" : "") + "</td></tr>").join("")
+    : '<tr><td colspan="8" class="text-center text-muted py-4">No products found. ' + (owner ? "Click Add product to register your first one." : "") + "</td></tr>";
+  $("count").textContent = count ? "Showing " + (page * PAGE + 1) + "-" + Math.min((page + 1) * PAGE, count) + " of " + count : "";
+  $("prev").disabled = page === 0; $("next").disabled = (page + 1) * PAGE >= count;
+}
+const reload = () => { page = 0; load(); };
+
+function openForm(r) {
+  editing = r; $("fProd").reset(); $("mTitle").textContent = r ? "Edit product" : "Add product";
+  if (r) { $("name").value = r.name; $("sku").value = r.sku; $("brand").value = r.brand || ""; $("cat").value = r.category_id || ""; $("sell").value = r.selling_price; $("buy").value = r.purchase_price ?? 0; $("min").value = r.min_stock; $("desc").value = r.description || ""; $("open").value = r.current_stock; }
+  $("open").disabled = !!r; $("openNote").classList.toggle("d-none", !r); mProd().show();
+}
+
+$("fProd").addEventListener("submit", async e => {
+  e.preventDefault(); $("save").disabled = true;
+  const row = { name: $("name").value.trim(), sku: $("sku").value.trim().toUpperCase(), brand: $("brand").value.trim() || null, category_id: $("cat").value || null,
+    selling_price: +$("sell").value, purchase_price: +$("buy").value, min_stock: parseInt($("min").value || 0), description: $("desc").value.trim() || null };
+  if (!editing) row.current_stock = parseInt($("open").value || 0);
+  const { error } = editing ? await db.from("products").update(row).eq("id", editing.id) : await db.from("products").insert(row);
+  $("save").disabled = false;
+  if (error) return toast(error.code === "23505" ? "That product code is already used. Choose a different code." : error.message, "error");
+  mProd().hide(); toast(editing ? "Product updated" : "Product added"); await loadFilters(); load();
+});
+
+$("rows").addEventListener("click", async e => {
+  const t = e.target.closest("[data-v],[data-e],[data-a]"); if (!t) return; e.preventDefault();
+  const id = +(t.dataset.v || t.dataset.e || t.dataset.a), r = rowsData.find(x => x.id === id);
+  if (t.dataset.e) return openForm(r);
+  if (t.dataset.a) {
+    if (!confirm((r.is_archived ? "Restore " : "Archive ") + r.name + "? " + (r.is_archived ? "" : "It will be hidden from the product list but its history is kept."))) return;
+    const { error } = await db.from("products").update({ is_archived: !r.is_archived }).eq("id", id);
+    return error ? toast(error.message, "error") : (toast(r.is_archived ? "Product restored" : "Product archived"), load());
+  }
+  $("vTitle").textContent = r.name;
+  const line = (k, v) => "<tr><th class='fw-normal text-muted'>" + k + "</th><td>" + v + "</td></tr>";
+  $("vBody").innerHTML = '<table class="table table-sm mb-0">' + line("Code", esc(r.sku)) + line("Brand", esc(r.brand || "—")) + line("Category", esc(r.category_name || "—")) +
+    line("Selling price", naira(r.selling_price)) + (me.role === "owner" ? line("Purchase price", naira(r.purchase_price)) : "") + line("Left", num(r.current_stock) + " packs") +
+    line("Low-stock level", num(r.min_stock) + " packs") + line("Status", statusBadge(r.status)) + line("Added", fmtDate(r.created_at)) + line("Description", esc(r.description || "—")) + "</table>";
+  bootstrap.Modal.getOrCreateInstance($("mView")).show();
+});
+
+async function drawCats() {
+  await loadFilters();
+  $("catList").innerHTML = cats.map(c => '<li class="list-group-item d-flex justify-content-between align-items-center">' + esc(c.name) + '<button class="btn btn-sm btn-outline-danger" data-dc="' + c.id + '"><i class="bi bi-trash"></i></button></li>').join("") || '<li class="list-group-item text-muted">No categories yet.</li>';
+}
+$("btnCat").onclick = () => { drawCats(); bootstrap.Modal.getOrCreateInstance($("mCat")).show(); };
+$("addCat").onclick = async () => {
+  const name = $("newCat").value.trim(); if (!name) return;
+  const { error } = await db.from("categories").insert({ name });
+  if (error) return toast(error.code === "23505" ? "That category already exists." : error.message, "error");
+  $("newCat").value = ""; drawCats();
+};
+$("catList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-dc]"); if (!b || !confirm("Delete this category? Products in it become uncategorised.")) return;
+  await db.from("products").update({ category_id: null }).eq("category_id", b.dataset.dc);
+  const { error } = await db.from("categories").delete().eq("id", b.dataset.dc);
+  error ? toast(error.message, "error") : drawCats();
+});
+
+["fBrand", "fCat", "fStatus", "sort", "fArch"].forEach(i => $(i).addEventListener("change", reload));
+let t; $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(reload, 300); });
+$("prev").onclick = () => { page--; load(); }; $("next").onclick = () => { page++; load(); }; $("btnAdd").onclick = () => openForm(null);
+
+(async () => {
+  me = await requireAuth(); if (!me) return;
+  renderShell("products", me);
+  if (me.role === "owner") { document.querySelectorAll(".owner-only").forEach(x => x.classList.remove("d-none")); document.querySelector(".cost-col").classList.remove("d-none"); }
+  await loadFilters(); load();
+})();
+</script>
+</body>
+</html>

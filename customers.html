@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customers</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<nav class="sidebar" id="sb" aria-label="Main"></nav>
+<main class="main" id="content">
+  <div class="topbar">
+    <button class="btn btn-outline-secondary d-lg-none" aria-label="Open menu" onclick="sb.classList.toggle('open')"><i class="bi bi-list"></i></button>
+    <h1 class="h4 mb-0">Customers</h1><span id="who" class="text-muted small"></span>
+  </div>
+  <div class="row g-3 mb-3">
+    <div class="col-md-6"><div class="stat warn"><i class="bi bi-people"></i><div><div class="stat-label">Total owed by customers</div><div class="stat-value" id="totalOwed">—</div></div></div></div>
+    <div class="col-md-6 d-flex align-items-center justify-content-md-end"><button class="btn btn-brand" id="btnAdd"><i class="bi bi-plus-lg"></i> Add customer</button></div>
+  </div>
+  <div class="panel mb-3"><label class="form-label small" for="q">Search</label><input id="q" class="form-control" placeholder="Name or phone"></div>
+  <div class="panel"><div class="table-responsive"><table class="table align-middle">
+    <caption class="visually-hidden">Customers and balances</caption>
+    <thead><tr><th>Customer</th><th>Phone</th><th class="text-end">Balance owed</th><th></th></tr></thead>
+    <tbody id="rows"></tbody></table></div></div>
+</main>
+
+<div class="modal fade" id="mCus" tabindex="-1" aria-labelledby="mCusT"><div class="modal-dialog"><form class="modal-content" id="fCus">
+  <div class="modal-header"><h2 class="modal-title h5" id="mCusT">Add customer</h2><button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="row g-3">
+    <div class="col-12"><label class="form-label" for="name">Customer name *</label><input id="name" class="form-control" required></div>
+    <div class="col-12"><label class="form-label" for="phone">Phone number</label><input id="phone" type="tel" class="form-control"></div>
+    <div class="col-12"><label class="form-label" for="address">Address</label><input id="address" class="form-control"></div>
+    <div class="col-12"><label class="form-label" for="notes">Notes</label><textarea id="notes" class="form-control" rows="2"></textarea></div>
+  </div></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-brand" id="save">Save customer</button></div>
+</form></div></div>
+
+<div class="modal fade" id="mPay" tabindex="-1" aria-labelledby="mPayT"><div class="modal-dialog"><form class="modal-content" id="fPay">
+  <div class="modal-header"><h2 class="modal-title h5" id="mPayT">Record payment</h2><button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="row g-3">
+    <div class="col-12"><div class="alert alert-secondary py-2 mb-0" id="payInfo" aria-live="polite"></div></div>
+    <div class="col-6"><label class="form-label" for="amt">Amount received (₦) *</label><input id="amt" type="number" min="0.01" step="0.01" class="form-control" required></div>
+    <div class="col-6"><label class="form-label" for="meth">Method *</label><select id="meth" class="form-select"><option value="cash">Cash</option><option value="transfer">Bank transfer</option><option value="pos">POS</option></select></div>
+    <div class="col-6"><label class="form-label" for="pdate">Date</label><input id="pdate" type="date" class="form-control"></div>
+    <div class="col-6"><label class="form-label" for="pnote">Note</label><input id="pnote" class="form-control"></div>
+  </div></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-brand" id="payBtn">Save payment</button></div>
+</form></div></div>
+
+<div class="modal fade" id="mSt" tabindex="-1" aria-labelledby="stT"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><h2 class="modal-title h5" id="stT">Customer statement</h2><button class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="statement"></div>
+  <div class="modal-footer"><button class="btn btn-brand" onclick="window.print()"><i class="bi bi-printer"></i> Print statement</button></div>
+</div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script><script src="js/auth.js"></script><script src="js/utils.js"></script><script src="js/layout.js"></script>
+<script>
+const $ = id => document.getElementById(id), modal = id => bootstrap.Modal.getOrCreateInstance($(id));
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos" }).format(new Date());
+const PAY = { cash: "Cash", transfer: "Bank transfer", pos: "POS", credit: "On credit" };
+let all = [], editing = null, payFor = null, key = crypto.randomUUID();
+
+async function load() {
+  const { data, error } = await db.from("customer_balances").select("*").order("name");
+  if (error) return toast(error.message + " (Did you run the Phase 6B SQL?)", "error");
+  all = data; $("totalOwed").textContent = naira(all.reduce((a, r) => a + Math.max(0, Number(r.balance)), 0)); draw();
+}
+function draw() {
+  const s = $("q").value.trim().toLowerCase();
+  const list = all.filter(r => !s || [r.name, r.phone].some(v => (v || "").toLowerCase().includes(s)));
+  $("rows").innerHTML = list.map(r => { const b = Number(r.balance);
+    return "<tr><td class='fw-semibold'>" + esc(r.name) + "</td><td>" + esc(r.phone || "—") + "</td><td class='text-end fw-semibold " + (b > 0 ? "text-danger" : "") + "'>" + naira(b) +
+    "</td><td class='text-end text-nowrap'><button class='btn btn-sm btn-brand me-1' data-p='" + r.id + "'" + (b > 0 ? "" : " disabled") + ">Record payment</button><button class='btn btn-sm btn-outline-secondary me-1' data-s='" + r.id + "'>Statement</button><button class='btn btn-sm btn-outline-secondary' data-e='" + r.id + "' aria-label='Edit " + esc(r.name) + "'><i class='bi bi-pencil'></i></button></td></tr>"; }).join("")
+    || '<tr><td colspan="4" class="text-center text-muted py-4">No customers yet. Click Add customer to register your first one.</td></tr>';
+}
+$("q").addEventListener("input", draw);
+
+function openForm(r) {
+  editing = r; $("fCus").reset(); $("mCusT").textContent = r ? "Edit customer" : "Add customer";
+  if (r) { $("name").value = r.name; $("phone").value = r.phone || ""; $("address").value = r.address || ""; $("notes").value = r.notes || ""; }
+  modal("mCus").show();
+}
+$("btnAdd").onclick = () => openForm(null);
+$("fCus").addEventListener("submit", async e => {
+  e.preventDefault(); $("save").disabled = true;
+  const row = { name: $("name").value.trim(), phone: $("phone").value.trim() || null, address: $("address").value.trim() || null, notes: $("notes").value.trim() || null };
+  const { error } = editing ? await db.from("customers").update(row).eq("id", editing.id) : await db.from("customers").insert(row);
+  $("save").disabled = false;
+  if (error) return toast(error.message, "error");
+  modal("mCus").hide(); toast(editing ? "Customer updated" : "Customer added"); load();
+});
+
+function openPay(r) {
+  payFor = r; $("fPay").reset(); $("pdate").value = today; $("amt").max = r.balance;
+  $("payInfo").textContent = r.name + " owes " + naira(r.balance) + ". You cannot record more than this."; modal("mPay").show();
+}
+$("fPay").addEventListener("submit", async e => {
+  e.preventDefault(); const a = +$("amt").value;
+  if (!(a > 0)) return toast("Enter the amount received.", "error");
+  if (a > Number(payFor.balance)) return toast("That is more than the customer owes (" + naira(payFor.balance) + ").", "error");
+  $("payBtn").disabled = true;
+  const { error } = await db.rpc("record_customer_payment", { p_customer_id: payFor.id, p_amount: a, p_method: $("meth").value, p_paid_on: $("pdate").value || null, p_note: $("pnote").value.trim() || null, p_client_key: key });
+  $("payBtn").disabled = false;
+  if (error) return toast(error.message, "error");
+  key = crypto.randomUUID(); modal("mPay").hide(); toast("Payment recorded."); load();
+});
+
+async function statement(r) {
+  $("statement").innerHTML = "Loading..."; modal("mSt").show();
+  const s = await db.from("sales").select("ref,sale_date,qty,total,amount_paid,payment_method,status,products(name)").eq("customer_id", r.id).order("sale_date").order("id");
+  const p = await db.from("customer_payments").select("paid_on,amount,method,note").eq("customer_id", r.id).order("paid_on").order("id");
+  if (s.error || p.error) { $("statement").textContent = (s.error || p.error).message; return; }
+  const credit = s.data.filter(x => x.payment_method === "credit" && x.status === "completed").reduce((a, x) => a + Number(x.total) - Number(x.amount_paid), 0);
+  const paid = p.data.reduce((a, x) => a + Number(x.amount), 0);
+  $("statement").innerHTML = '<div class="text-center mb-3"><strong>' + esc(window.APP_CONFIG.STORE_NAME) + '</strong><div>Statement for ' + esc(r.name) + '</div><div class="small text-muted">As at ' + fmtDate(new Date()) + "</div></div>" +
+    '<h3 class="h6">Purchases</h3><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Date</th><th>Ref</th><th>Product</th><th class="text-end">Total</th><th class="text-end">Paid at sale</th><th>Type</th></tr></thead><tbody>' +
+    (s.data.map(x => "<tr" + (x.status === "reversed" ? ' class="text-decoration-line-through text-muted"' : "") + "><td>" + fmtDate(x.sale_date) + "</td><td>" + esc(x.ref) + "</td><td>" + esc(x.products ? x.products.name : "") + " x" + num(x.qty) + '</td><td class="text-end">' + naira(x.total) + '</td><td class="text-end">' + naira(x.amount_paid) + "</td><td>" + esc(PAY[x.payment_method]) + (x.status === "reversed" ? " (reversed)" : "") + "</td></tr>").join("") || '<tr><td colspan="6" class="text-muted">No purchases yet.</td></tr>') + "</tbody></table></div>" +
+    '<h3 class="h6">Payments received</h3><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Date</th><th>Method</th><th>Note</th><th class="text-end">Amount</th></tr></thead><tbody>' +
+    (p.data.map(x => "<tr><td>" + fmtDate(x.paid_on) + "</td><td>" + esc(PAY[x.method]) + "</td><td>" + esc(x.note || "—") + '</td><td class="text-end">' + naira(x.amount) + "</td></tr>").join("") || '<tr><td colspan="4" class="text-muted">No payments yet.</td></tr>') + "</tbody></table></div>" +
+    '<table class="table table-sm w-auto ms-auto"><tr><th class="fw-normal">Unpaid on credit sales</th><td class="text-end">' + naira(credit) + '</td></tr><tr><th class="fw-normal">Payments received</th><td class="text-end">' + naira(paid) + '</td></tr><tr><th>Balance owed</th><th class="text-end">' + naira(credit - paid) + "</th></tr></table>";
+}
+
+$("rows").addEventListener("click", e => {
+  const b = e.target.closest("[data-p],[data-s],[data-e]"); if (!b) return;
+  const r = all.find(x => x.id == (b.dataset.p || b.dataset.s || b.dataset.e));
+  b.dataset.p ? openPay(r) : b.dataset.s ? statement(r) : openForm(r);
+});
+(async () => { const me = await requireAuth("owner"); if (!me) return; renderShell("customers", me); load(); })();
+</script>
+</body>
+</html>

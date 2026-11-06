@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reports</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<nav class="sidebar" id="sb" aria-label="Main"></nav>
+<main class="main" id="content">
+  <div class="topbar">
+    <button class="btn btn-outline-secondary d-lg-none" aria-label="Open menu" onclick="sb.classList.toggle('open')"><i class="bi bi-list"></i></button>
+    <h1 class="h4 mb-0">Reports</h1><span id="who" class="text-muted small"></span>
+  </div>
+  <div class="panel mb-3"><div class="row g-2 align-items-end">
+    <div class="col-md-4"><label class="form-label small" for="rt">Report</label><select id="rt" class="form-select"></select></div>
+    <div class="col-6 col-md-2 f-dates"><label class="form-label small" for="from">From</label><input id="from" type="date" class="form-control"></div>
+    <div class="col-6 col-md-2 f-dates"><label class="form-label small" for="to">To</label><input id="to" type="date" class="form-control"></div>
+    <div class="col-md-2 f-prod"><label class="form-label small" for="prod">Product</label><select id="prod" class="form-select"><option value="">All products</option></select></div>
+    <div class="col-md-2 f-group"><label class="form-label small" for="grp">Group by</label><select id="grp" class="form-select"><option value="day">Day</option><option value="week">Week</option><option value="month" selected>Month</option><option value="year">Year</option></select></div>
+    <div class="col-12 d-flex flex-wrap gap-2 mt-2">
+      <button class="btn btn-brand" id="go"><i class="bi bi-bar-chart"></i> Show report</button>
+      <button class="btn btn-outline-secondary" id="xCsv"><i class="bi bi-filetype-csv"></i> CSV</button>
+      <button class="btn btn-outline-secondary" id="xXls"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+      <button class="btn btn-outline-secondary" id="xPdf"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
+      <button class="btn btn-outline-secondary" id="xPrint"><i class="bi bi-printer"></i> Print</button>
+    </div>
+  </div></div>
+  <div class="visually-hidden" id="status" role="status" aria-live="polite"></div>
+  <div class="panel" id="report">
+    <h2 class="h5 mb-0" id="rTitle"></h2><p class="text-muted small" id="rSub"></p>
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0" id="rTable"></table></div>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="js/config.js"></script><script src="js/auth.js"></script><script src="js/utils.js"></script><script src="js/layout.js"></script>
+<script>
+const $ = id => document.getElementById(id), N = Number;
+const CATS = { transportation: "Transportation", rent: "Rent", electricity: "Electricity", salaries: "Staff salaries", loading_offloading: "Loading and offloading", other: "Other" };
+const PAY = { cash: "Cash", transfer: "Bank transfer", pos: "POS", credit: "On credit" };
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos" }).format(new Date());
+const addDays = (s, n) => { const d = new Date(s + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const mondayOf = s => addDays(s, -((new Date(s + "T00:00:00Z").getUTCDay() + 6) % 7));
+const keyOf = (s, g) => g === "year" ? s.slice(0, 4) : g === "month" ? s.slice(0, 7) : g === "week" ? mondayOf(s) : s;
+const labelOf = (k, g) => g === "year" ? k : g === "month" ? new Date(k + "-01T00:00:00Z").toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }) : g === "week" ? "Week of " + fmtDate(k) : fmtDate(k);
+const STATUS = { out: "Out of stock", low: "Low stock", ok: "In stock" };
+
+async function all(build) {   // fetches every row, 1000 at a time
+  let out = [], from = 0;
+  for (;;) { const { data, error } = await build().order("id").range(from, from + 999); if (error) throw error; out = out.concat(data); if (data.length < 1000) break; from += 1000; }
+  return out;
+}
+const salesQ = f => () => { let q = db.from("sales_view").select("*").eq("status", "completed").gte("sale_date", f.from).lte("sale_date", f.to); if (f.prod) q = q.eq("product_id", f.prod); return q; };
+const batchQ = f => () => { let q = db.from("stock_batches").select("received_on,qty_received,unit_cost,reference,supplier_id,products(name),suppliers(name)").gte("received_on", f.from).lte("received_on", f.to); if (f.prod) q = q.eq("product_id", f.prod); return q; };
+const cost = r => N(r.qty) * N(r.unit_cost || 0);
+
+// Each report: which filters it uses, and a function returning { cols, rows }.
+// Column types: text, num, money, date. s:1 means "add up in a totals row".
+const R = {
+  sales: { label: "Sales report (daily, weekly, monthly, annual)", dates: 1, prod: 1, group: 1, run: async f => {
+    const d = await all(salesQ(f)), g = {};
+    d.forEach(r => { const k = keyOf(r.sale_date, f.group), x = g[k] = g[k] || { n: 0, q: 0, rev: 0, cogs: 0 }; x.n++; x.q += N(r.qty); x.rev += N(r.total); x.cogs += cost(r); });
+    return { cols: [{ k: "p", l: "Period", t: "text" }, { k: "n", l: "Transactions", t: "num", s: 1 }, { k: "q", l: "Packs sold", t: "num", s: 1 }, { k: "rev", l: "Revenue", t: "money", s: 1 }, { k: "cogs", l: "Cost of goods", t: "money", s: 1 }, { k: "gp", l: "Gross profit", t: "money", s: 1 }],
+      rows: Object.keys(g).sort().map(k => ({ p: labelOf(k, f.group), ...g[k], gp: g[k].rev - g[k].cogs })) };
+  } },
+  inventory: { label: "Product inventory report", prod: 1, run: async f => {
+    const d = await all(() => { let q = db.from("products_status").select("*").eq("is_archived", false); if (f.prod) q = q.eq("id", f.prod); return q; });
+    d.sort((a, b) => a.name.localeCompare(b.name));
+    return { cols: [{ k: "sku", l: "Code", t: "text" }, { k: "name", l: "Product", t: "text" }, { k: "cat", l: "Category", t: "text" }, { k: "cs", l: "Packs left", t: "num", s: 1 }, { k: "min", l: "Low-stock level", t: "num" }, { k: "st", l: "Status", t: "text" }, { k: "cp", l: "Cost per pack", t: "money" }, { k: "sp", l: "Selling price", t: "money" }, { k: "vc", l: "Stock value at cost", t: "money", s: 1 }, { k: "vs", l: "Stock value at selling price", t: "money", s: 1 }],
+      rows: d.map(r => ({ sku: r.sku, name: r.name, cat: r.category_name || "", cs: r.current_stock, min: r.min_stock, st: STATUS[r.status], cp: N(r.purchase_price || 0), sp: N(r.selling_price), vc: r.current_stock * N(r.purchase_price || 0), vs: r.current_stock * N(r.selling_price) })) };
+  } },
+  stockin: { label: "Stock-in report", dates: 1, prod: 1, run: async f => {
+    const d = await all(batchQ(f)); d.sort((a, b) => b.received_on.localeCompare(a.received_on));
+    return { cols: [{ k: "d", l: "Date", t: "date" }, { k: "p", l: "Product", t: "text" }, { k: "s", l: "Supplier", t: "text" }, { k: "q", l: "Packs received", t: "num", s: 1 }, { k: "c", l: "Cost per pack", t: "money" }, { k: "t", l: "Total cost", t: "money", s: 1 }, { k: "r", l: "Reference", t: "text" }],
+      rows: d.map(b => ({ d: b.received_on, p: b.products ? b.products.name : "", s: b.suppliers ? b.suppliers.name : "", q: b.qty_received, c: N(b.unit_cost), t: b.qty_received * N(b.unit_cost), r: b.reference || "" })) };
+  } },
+  stockout: { label: "Stock-out report (sales)", dates: 1, prod: 1, run: async f => {
+    const d = await all(salesQ(f)); d.sort((a, b) => b.sale_date.localeCompare(a.sale_date));
+    return { cols: [{ k: "d", l: "Date", t: "date" }, { k: "ref", l: "Transaction", t: "text" }, { k: "p", l: "Product", t: "text" }, { k: "q", l: "Packs sold", t: "num", s: 1 }, { k: "u", l: "Price per pack", t: "money" }, { k: "t", l: "Total", t: "money", s: 1 }, { k: "pm", l: "Payment", t: "text" }, { k: "st", l: "Served by", t: "text" }],
+      rows: d.map(r => ({ d: r.sale_date, ref: r.ref, p: r.product_name, q: r.qty, u: N(r.unit_price), t: N(r.total), pm: PAY[r.payment_method], st: r.staff_name || "" })) };
+  } },
+  low: { label: "Low-stock report", run: async () => {
+    const d = (await all(() => db.from("products_status").select("*").eq("is_archived", false).neq("status", "ok"))).sort((a, b) => a.current_stock - b.current_stock);
+    return { cols: [{ k: "name", l: "Product", t: "text" }, { k: "cs", l: "Packs left", t: "num" }, { k: "min", l: "Low-stock level", t: "num" }, { k: "sh", l: "Packs short", t: "num", s: 1 }, { k: "st", l: "Status", t: "text" }],
+      rows: d.map(r => ({ name: r.name, cs: r.current_stock, min: r.min_stock, sh: Math.max(0, r.min_stock - r.current_stock), st: STATUS[r.status] })) };
+  } },
+  pl: { label: "Profit and loss report", dates: 1, run: async f => {
+    const s = await all(salesQ({ from: f.from, to: f.to })), e = await all(() => db.from("expenses").select("id,category,amount").eq("is_void", false).gte("expense_date", f.from).lte("expense_date", f.to));
+    const rev = s.reduce((a, r) => a + N(r.total), 0), cogs = s.reduce((a, r) => a + cost(r), 0), by = {}; e.forEach(r => by[r.category] = (by[r.category] || 0) + N(r.amount));
+    const ex = Object.values(by).reduce((a, b) => a + b, 0), gp = rev - cogs;
+    return { cols: [{ k: "i", l: "Item", t: "text" }, { k: "a", l: "Amount", t: "money" }], rows: [{ i: "Sales revenue", a: rev, b: 1 }, { i: "Cost of goods sold", a: cogs }, { i: "Gross profit", a: gp, b: 1 }]
+      .concat(Object.keys(by).map(k => ({ i: "Expense: " + CATS[k], a: by[k] }))).concat([{ i: "Total expenses", a: ex, b: 1 }, { i: "Net profit", a: gp - ex, b: 1 }]) };
+  } },
+  expense: { label: "Expense report", dates: 1, run: async f => {
+    const d = await all(() => db.from("expenses").select("id,expense_date,category,description,amount").eq("is_void", false).gte("expense_date", f.from).lte("expense_date", f.to)); d.sort((a, b) => b.expense_date.localeCompare(a.expense_date));
+    return { cols: [{ k: "d", l: "Date", t: "date" }, { k: "c", l: "Category", t: "text" }, { k: "x", l: "Description", t: "text" }, { k: "a", l: "Amount", t: "money", s: 1 }], rows: d.map(r => ({ d: r.expense_date, c: CATS[r.category], x: r.description || "", a: N(r.amount) })) };
+  } },
+  supplier: { label: "Supplier purchase report", dates: 1, prod: 1, run: async f => {
+    const d = await all(batchQ(f)), g = {};
+    d.forEach(b => { const n = b.suppliers ? b.suppliers.name : "No supplier recorded", x = g[n] = g[n] || { n: 0, q: 0, t: 0 }; x.n++; x.q += b.qty_received; x.t += b.qty_received * N(b.unit_cost); });
+    return { cols: [{ k: "s", l: "Supplier", t: "text" }, { k: "n", l: "Deliveries", t: "num", s: 1 }, { k: "q", l: "Packs received", t: "num", s: 1 }, { k: "t", l: "Total spent", t: "money", s: 1 }], rows: Object.keys(g).sort().map(n => ({ s: n, ...g[n] })) };
+  } },
+  staff: { label: "Staff performance report", dates: 1, run: async f => {
+    const d = await all(salesQ({ from: f.from, to: f.to })), g = {};
+    d.forEach(r => { const n = r.staff_name || "Unknown", x = g[n] = g[n] || { n: 0, q: 0, rev: 0, gp: 0 }; x.n++; x.q += N(r.qty); x.rev += N(r.total); x.gp += N(r.total) - cost(r); });
+    return { cols: [{ k: "s", l: "Staff member", t: "text" }, { k: "n", l: "Sales recorded", t: "num", s: 1 }, { k: "q", l: "Packs sold", t: "num", s: 1 }, { k: "rev", l: "Revenue", t: "money", s: 1 }, { k: "gp", l: "Gross profit", t: "money", s: 1 }], rows: Object.keys(g).sort().map(n => ({ s: n, ...g[n] })) };
+  } }
+};
+
+let cur = null;
+const raw = (r, c) => { const v = r[c.k]; return c.t === "date" ? fmtDate(v) : c.t === "money" ? Math.round(N(v) * 100) / 100 : v ?? ""; };
+const shown = (r, c) => { const v = r[c.k]; return c.t === "money" ? naira(v) : c.t === "num" ? num(v) : c.t === "date" ? fmtDate(v) : esc(v ?? ""); };
+const label = c => c.l + (c.t === "money" ? " (NGN)" : "");
+function allRows() {   // data rows plus a totals row when any column is summed
+  const rows = cur.rows.slice(); if (!rows.length || !cur.cols.some(c => c.s)) return rows;
+  const t = { _t: 1 }; cur.cols.forEach((c, i) => t[c.k] = c.s ? cur.rows.reduce((a, r) => a + N(r[c.k]), 0) : i === 0 ? "Total" : ""); rows.push(t); return rows;
+}
+function draw() {
+  const rows = allRows(), c = cur.cols;
+  $("rTitle").textContent = cur.rep.label.replace(/ \(.*\)/, "");
+  const pn = cur.f.prod && cur.rep.prod ? " | " + $("prod").selectedOptions[0].text : "";
+  cur.sub = (cur.rep.dates ? "From " + fmtDate(cur.f.from) + " to " + fmtDate(cur.f.to) : "As at " + fmtDate(today)) + pn + (cur.rep.group ? " | By " + cur.f.group : "");
+  $("rSub").textContent = cur.sub;
+  $("rTable").innerHTML = "<caption class='visually-hidden'>" + esc($("rTitle").textContent) + "</caption><thead><tr>" + c.map(x => "<th" + (x.t === "money" || x.t === "num" ? ' class="text-end"' : "") + ">" + esc(x.l) + "</th>").join("") + "</tr></thead><tbody>" +
+    (rows.length ? rows.map(r => "<tr" + (r._t || r.b ? ' class="fw-bold table-light"' : "") + ">" + c.map(x => "<td" + (x.t === "money" || x.t === "num" ? ' class="text-end"' : "") + ">" + shown(r, x) + "</td>").join("") + "</tr>").join("")
+      : '<tr><td colspan="' + c.length + '" class="text-center text-muted py-4">No data for this selection.</td></tr>') + "</tbody>";
+}
+async function run() {
+  const rep = R[$("rt").value], f = { from: $("from").value, to: $("to").value, prod: $("prod").value, group: $("grp").value };
+  if (rep.dates && (!f.from || !f.to || f.from > f.to)) return toast("Choose a valid date range.", "error");
+  $("go").disabled = true; $("status").textContent = "Loading report...";
+  try { const out = await rep.run(f); cur = { rep, f, cols: out.cols, rows: out.rows }; draw(); $("status").textContent = out.rows.length + " row(s) loaded."; }
+  catch (e) { toast(e.message, "error"); $("status").textContent = "Could not load the report."; }
+  $("go").disabled = false;
+}
+function fname() { return $("rt").value + "-report-" + (cur.rep.dates ? cur.f.from + "-to-" + cur.f.to : today); }
+function need() { if (!cur) { toast("Show a report first.", "error"); return false; } return true; }
+function save(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+
+$("xCsv").onclick = () => {
+  if (!need()) return; const q = v => typeof v === "number" ? v : '"' + String(v).replace(/"/g, '""') + '"';
+  const lines = [cur.cols.map(c => q(label(c))).join(",")].concat(allRows().map(r => cur.cols.map(c => q(raw(r, c))).join(",")));
+  save(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }), fname() + ".csv");
+};
+$("xXls").onclick = () => {
+  if (!need()) return;
+  const aoa = [[$("rTitle").textContent], [cur.sub], []].concat([cur.cols.map(label)], allRows().map(r => cur.cols.map(c => raw(r, c))));
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws["!cols"] = cur.cols.map(c => ({ wch: Math.max(14, c.l.length + 2) }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Report"); XLSX.writeFile(wb, fname() + ".xlsx");
+};
+$("xPdf").onclick = () => {
+  if (!need()) return; const nf = new Intl.NumberFormat("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const doc = new window.jspdf.jsPDF({ orientation: cur.cols.length > 6 ? "landscape" : "portrait" });
+  doc.setFontSize(14); doc.text(window.APP_CONFIG.STORE_NAME + " - " + $("rTitle").textContent, 14, 15);
+  doc.setFontSize(9); doc.text(cur.sub, 14, 21);
+  const cs = {}; cur.cols.forEach((c, i) => { if (c.t === "money" || c.t === "num") cs[i] = { halign: "right" }; });
+  doc.autoTable({ startY: 26, head: [cur.cols.map(label)], styles: { fontSize: 8 }, headStyles: { fillColor: [51, 51, 51] }, columnStyles: cs,
+    body: allRows().map(r => cur.cols.map(c => c.t === "money" ? nf.format(N(r[c.k])) : c.t === "num" ? num(r[c.k]) : String(raw(r, c)))),
+    didParseCell: d => { const r = allRows()[d.row.index]; if (d.section === "body" && r && (r._t || r.b)) d.cell.styles.fontStyle = "bold"; } });
+  doc.save(fname() + ".pdf");
+};
+$("xPrint").onclick = () => { if (need()) window.print(); };
+
+function setControls() {
+  const rep = R[$("rt").value];
+  document.querySelectorAll(".f-dates").forEach(x => x.classList.toggle("d-none", !rep.dates));
+  document.querySelector(".f-prod").classList.toggle("d-none", !rep.prod);
+  document.querySelector(".f-group").classList.toggle("d-none", !rep.group);
+}
+$("rt").addEventListener("change", () => { setControls(); run(); }); $("go").onclick = run;
+(async () => {
+  const me = await requireAuth("owner"); if (!me) return; renderShell("reports", me);
+  $("rt").innerHTML = Object.keys(R).map(k => '<option value="' + k + '">' + R[k].label + "</option>").join("");
+  $("from").value = today.slice(0, 7) + "-01"; $("to").value = today; setControls();
+  const p = await db.from("products_status").select("id,name").order("name");
+  $("prod").innerHTML += (p.data || []).map(x => '<option value="' + x.id + '">' + esc(x.name) + "</option>").join(""); run();
+})();
+</script>
+</body>
+</html>

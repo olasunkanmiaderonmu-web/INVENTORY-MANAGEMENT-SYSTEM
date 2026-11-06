@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finance</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<nav class="sidebar" id="sb" aria-label="Main"></nav>
+<main class="main" id="content">
+  <div class="topbar">
+    <button class="btn btn-outline-secondary d-lg-none" aria-label="Open menu" onclick="sb.classList.toggle('open')"><i class="bi bi-list"></i></button>
+    <h1 class="h4 mb-0">Finance</h1><span id="who" class="text-muted small"></span>
+  </div>
+  <div class="panel mb-3"><div class="row g-2 align-items-end">
+    <div class="col-md-3"><label class="form-label small" for="period">Period</label><select id="period" class="form-select"><option value="today">Today</option><option value="week">This week (Mon to today)</option><option value="month" selected>This month</option><option value="year">This year</option><option value="custom">Custom range</option></select></div>
+    <div class="col-6 col-md-2"><label class="form-label small" for="from">From</label><input id="from" type="date" class="form-control"></div>
+    <div class="col-6 col-md-2"><label class="form-label small" for="to">To</label><input id="to" type="date" class="form-control"></div>
+    <div class="col-md-2"><label class="form-label small" for="group">Break down by</label><select id="group" class="form-select"><option value="day">Day</option><option value="week">Week</option><option value="month">Month</option></select></div>
+    <div class="col-md-3 d-flex gap-2"><button class="btn btn-brand flex-grow-1" id="go">Show report</button><button class="btn btn-outline-secondary" id="print" aria-label="Print report"><i class="bi bi-printer"></i></button></div>
+  </div></div>
+  <div id="report">
+    <p class="h6 mb-3" id="range"></p>
+    <div class="row g-3 mb-3" id="cards"></div>
+    <div class="row g-3 mb-3">
+      <div class="col-lg-7"><div class="panel"><h2 class="h6">Revenue and net profit</h2><canvas id="chart" height="200" role="img" aria-label="Bar chart of revenue and net profit by period"></canvas></div></div>
+      <div class="col-lg-5"><div class="panel"><h2 class="h6">Expenses by category</h2><table class="table table-sm mb-0"><tbody id="cats"></tbody></table></div></div>
+    </div>
+    <div class="panel"><h2 class="h6">Breakdown</h2><div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <caption class="visually-hidden">Financial breakdown by period</caption>
+      <thead><tr><th>Period</th><th class="text-end">Revenue</th><th class="text-end">Cost of goods</th><th class="text-end">Gross profit</th><th class="text-end">Expenses</th><th class="text-end">Net profit</th></tr></thead>
+      <tbody id="rows"></tbody></table></div></div>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="js/config.js"></script><script src="js/auth.js"></script><script src="js/utils.js"></script><script src="js/layout.js"></script>
+<script>
+const $ = id => document.getElementById(id), N = Number;
+const CATS = { transportation: "Transportation", rent: "Rent", electricity: "Electricity", salaries: "Staff salaries", loading_offloading: "Loading and offloading", other: "Other" };
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos" }).format(new Date());
+const addDays = (s, n) => { const d = new Date(s + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const mondayOf = s => addDays(s, -((new Date(s + "T00:00:00Z").getUTCDay() + 6) % 7));
+let chart;
+
+function setRange() {
+  const p = $("period").value, c = p === "custom";
+  $("from").disabled = $("to").disabled = !c;
+  if (p === "today") { $("from").value = today; $("to").value = today; }
+  if (p === "week") { $("from").value = mondayOf(today); $("to").value = today; }
+  if (p === "month") { $("from").value = today.slice(0, 7) + "-01"; $("to").value = today; }
+  if (p === "year") { $("from").value = today.slice(0, 4) + "-01-01"; $("to").value = today; }
+}
+async function all(build) {   // fetches every row, 1000 at a time
+  let out = [], from = 0;
+  for (;;) { const { data, error } = await build().order("id").range(from, from + 999); if (error) throw error; out = out.concat(data); if (data.length < 1000) break; from += 1000; }
+  return out;
+}
+const keyOf = (s, g) => g === "month" ? s.slice(0, 7) : g === "week" ? mondayOf(s) : s;
+const labelOf = (k, g) => g === "month" ? new Date(k + "-01T00:00:00Z").toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }) : g === "week" ? "Week of " + fmtDate(k) : fmtDate(k);
+const money = v => '<span class="' + (v < 0 ? "text-danger" : "") + '">' + naira(v) + "</span>";
+
+async function run() {
+  const from = $("from").value, to = $("to").value, g = $("group").value;
+  if (!from || !to || from > to) return toast("Choose a valid date range.", "error");
+  $("go").disabled = true;
+  try {
+    const [sales, exp, pays, bal] = await Promise.all([
+      all(() => db.from("sales_view").select("id,sale_date,total,qty,unit_cost,amount_paid").eq("status", "completed").gte("sale_date", from).lte("sale_date", to)),
+      all(() => db.from("expenses").select("id,expense_date,amount,category").eq("is_void", false).gte("expense_date", from).lte("expense_date", to)),
+      all(() => db.from("customer_payments").select("id,paid_on,amount").gte("paid_on", from).lte("paid_on", to)),
+      db.from("customer_balances").select("balance")
+    ]);
+    const groups = {}, G = k => groups[k] = groups[k] || { rev: 0, cogs: 0, exp: 0 };
+    let rev = 0, cogs = 0, ex = 0; const byCat = {};
+    sales.forEach(r => { const t = N(r.total), c = N(r.qty) * N(r.unit_cost || 0); rev += t; cogs += c; const x = G(keyOf(r.sale_date, g)); x.rev += t; x.cogs += c; });
+    exp.forEach(r => { const a = N(r.amount); ex += a; G(keyOf(r.expense_date, g)).exp += a; byCat[r.category] = (byCat[r.category] || 0) + a; });
+    const gross = rev - cogs, net = gross - ex;
+    const cash = sales.reduce((a, r) => a + N(r.amount_paid), 0) + pays.reduce((a, r) => a + N(r.amount), 0);
+    const owed = (bal.data || []).reduce((a, r) => a + Math.max(0, N(r.balance)), 0);
+    $("range").textContent = "Report for " + fmtDate(from) + " to " + fmtDate(to);
+    const card = (t, v, i, cls) => '<div class="col-6 col-xl-3"><div class="stat ' + (cls || "") + '"><i class="bi bi-' + i + '"></i><div><div class="stat-label">' + t + '</div><div class="stat-value">' + v + "</div></div></div></div>";
+    $("cards").innerHTML = card("Sales revenue", naira(rev), "cash-stack") + card("Cost of goods sold", naira(cogs), "box-seam") + card("Gross profit" + (rev ? " (" + (gross / rev * 100).toFixed(1) + "%)" : ""), money(gross), "graph-up-arrow") +
+      card("Expenses", naira(ex), "receipt", "warn") + card("Net profit", money(net), "piggy-bank", net < 0 ? "bad" : "") + card("Cash actually received", naira(cash), "wallet2") + card("Customers still owe you (today)", naira(owed), "people", "warn");
+    const keys = Object.keys(groups).sort();
+    $("rows").innerHTML = keys.map(k => { const x = groups[k], gp = x.rev - x.cogs;
+      return "<tr><td>" + labelOf(k, g) + '</td><td class="text-end">' + naira(x.rev) + '</td><td class="text-end">' + naira(x.cogs) + '</td><td class="text-end">' + money(gp) + '</td><td class="text-end">' + naira(x.exp) + '</td><td class="text-end fw-semibold">' + money(gp - x.exp) + "</td></tr>"; }).join("")
+      + (keys.length ? '<tr class="table-light fw-bold"><td>Total</td><td class="text-end">' + naira(rev) + '</td><td class="text-end">' + naira(cogs) + '</td><td class="text-end">' + money(gross) + '</td><td class="text-end">' + naira(ex) + '</td><td class="text-end">' + money(net) + "</td></tr>" : '<tr><td colspan="6" class="text-center text-muted py-4">No sales or expenses in this period.</td></tr>');
+    $("cats").innerHTML = Object.keys(byCat).map(k => "<tr><td>" + esc(CATS[k]) + '</td><td class="text-end">' + naira(byCat[k]) + "</td></tr>").join("") || '<tr><td class="text-muted">No expenses in this period.</td></tr>';
+    if (chart) chart.destroy();
+    chart = new Chart($("chart"), { type: "bar", data: { labels: keys.map(k => labelOf(k, g)), datasets: [
+      { label: "Revenue", data: keys.map(k => groups[k].rev), backgroundColor: "#333333" },
+      { label: "Net profit", data: keys.map(k => groups[k].rev - groups[k].cogs - groups[k].exp), backgroundColor: "#FF6700" }] }, options: { plugins: { legend: { position: "bottom" } } } });
+  } catch (e) { toast(e.message + " (Did you run the Phase 7 SQL?)", "error"); }
+  $("go").disabled = false;
+}
+$("period").addEventListener("change", () => { setRange(); run(); });
+$("go").onclick = run; $("group").addEventListener("change", run); $("print").onclick = () => window.print();
+(async () => { const me = await requireAuth("owner"); if (!me) return; renderShell("finance", me); setRange(); run(); })();
+</script>
+</body>
+</html>

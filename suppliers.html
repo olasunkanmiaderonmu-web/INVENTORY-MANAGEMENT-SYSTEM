@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suppliers</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<nav class="sidebar" id="sb" aria-label="Main"></nav>
+<main class="main" id="content">
+  <div class="topbar">
+    <button class="btn btn-outline-secondary d-lg-none" aria-label="Open menu" onclick="sb.classList.toggle('open')"><i class="bi bi-list"></i></button>
+    <h1 class="h4 mb-0">Suppliers</h1><span id="who" class="text-muted small"></span>
+  </div>
+  <div class="panel mb-3"><div class="row g-2 align-items-end">
+    <div class="col-md-6"><label class="form-label small" for="q">Search</label><input id="q" class="form-control" placeholder="Name, contact person or phone"></div>
+    <div class="col-md-6 text-md-end"><button class="btn btn-brand" id="btnAdd"><i class="bi bi-plus-lg"></i> Add supplier</button></div>
+  </div></div>
+  <div class="panel"><div class="table-responsive"><table class="table align-middle">
+    <caption class="visually-hidden">Suppliers</caption>
+    <thead><tr><th>Supplier</th><th>Contact person</th><th>Phone</th><th>Email</th><th></th></tr></thead>
+    <tbody id="rows"></tbody></table></div></div>
+</main>
+
+<div class="modal fade" id="mSup" tabindex="-1" aria-labelledby="mSupT"><div class="modal-dialog modal-lg"><form class="modal-content" id="fSup">
+  <div class="modal-header"><h2 class="modal-title h5" id="mSupT">Add supplier</h2><button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="row g-3">
+    <div class="col-md-6"><label class="form-label" for="name">Supplier / business name *</label><input id="name" class="form-control" required></div>
+    <div class="col-md-6"><label class="form-label" for="contact">Contact person</label><input id="contact" class="form-control"></div>
+    <div class="col-md-6"><label class="form-label" for="phone">Phone number</label><input id="phone" type="tel" class="form-control"></div>
+    <div class="col-md-6"><label class="form-label" for="email">Email address</label><input id="email" type="email" class="form-control"></div>
+    <div class="col-12"><label class="form-label" for="address">Business address</label><input id="address" class="form-control"></div>
+    <div class="col-12"><label class="form-label" for="notes">Notes</label><textarea id="notes" class="form-control" rows="2"></textarea></div>
+  </div></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-brand" id="save">Save supplier</button></div>
+</form></div></div>
+
+<div class="modal fade" id="mView" tabindex="-1" aria-labelledby="vTitle"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><h2 class="modal-title h5" id="vTitle"></h2><button class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="vBody"></div></div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script><script src="js/auth.js"></script><script src="js/utils.js"></script><script src="js/layout.js"></script>
+<script>
+const $ = id => document.getElementById(id), modal = id => bootstrap.Modal.getOrCreateInstance($(id));
+let all = [], editing = null;
+
+async function load() {
+  const { data, error } = await db.from("suppliers").select("*").order("name");
+  if (error) return toast(error.message, "error");
+  all = data; draw();
+}
+function draw() {
+  const s = $("q").value.trim().toLowerCase();
+  const list = all.filter(r => !s || [r.name, r.contact_person, r.phone].some(v => (v || "").toLowerCase().includes(s)));
+  $("rows").innerHTML = list.map(r => "<tr><td class='fw-semibold'>" + esc(r.name) + "</td><td>" + esc(r.contact_person || "—") + "</td><td>" + esc(r.phone || "—") + "</td><td>" + esc(r.email || "—") +
+    "</td><td class='text-end text-nowrap'><button class='btn btn-sm btn-outline-secondary me-1' data-v='" + r.id + "'>View</button><button class='btn btn-sm btn-outline-secondary' data-e='" + r.id + "' aria-label='Edit " + esc(r.name) + "'><i class='bi bi-pencil'></i></button></td></tr>").join("")
+    || '<tr><td colspan="5" class="text-center text-muted py-4">No suppliers yet. Click Add supplier to register your first one.</td></tr>';
+}
+$("q").addEventListener("input", draw);
+
+function openForm(r) {
+  editing = r; $("fSup").reset(); $("mSupT").textContent = r ? "Edit supplier" : "Add supplier";
+  if (r) { $("name").value = r.name; $("contact").value = r.contact_person || ""; $("phone").value = r.phone || ""; $("email").value = r.email || ""; $("address").value = r.address || ""; $("notes").value = r.notes || ""; }
+  modal("mSup").show();
+}
+$("btnAdd").onclick = () => openForm(null);
+
+$("fSup").addEventListener("submit", async e => {
+  e.preventDefault(); $("save").disabled = true;
+  const row = { name: $("name").value.trim(), contact_person: $("contact").value.trim() || null, phone: $("phone").value.trim() || null,
+    email: $("email").value.trim() || null, address: $("address").value.trim() || null, notes: $("notes").value.trim() || null };
+  const { error } = editing ? await db.from("suppliers").update(row).eq("id", editing.id) : await db.from("suppliers").insert(row);
+  $("save").disabled = false;
+  if (error) return toast(error.message, "error");
+  modal("mSup").hide(); toast(editing ? "Supplier updated" : "Supplier added"); load();
+});
+
+async function view(r) {
+  $("vTitle").textContent = r.name; $("vBody").innerHTML = "Loading...";
+  modal("mView").show();
+  const { data, error } = await db.from("stock_batches").select("received_on,qty_received,unit_cost,reference,products(name)").eq("supplier_id", r.id).order("received_on", { ascending: false }).order("id", { ascending: false });
+  if (error) { $("vBody").textContent = error.message; return; }
+  const by = {}; let packs = 0, spent = 0;
+  data.forEach(b => { const n = b.products ? b.products.name : "Unknown"; by[n] = by[n] || { packs: 0, spent: 0 }; by[n].packs += b.qty_received; by[n].spent += b.qty_received * b.unit_cost; packs += b.qty_received; spent += b.qty_received * b.unit_cost; });
+  const det = (k, v) => "<div class='col-md-6'><div class='small text-muted'>" + k + "</div><div>" + (v ? esc(v) : "—") + "</div></div>";
+  $("vBody").innerHTML = '<div class="row g-3 mb-3">' + det("Contact person", r.contact_person) + det("Phone", r.phone) + det("Email", r.email) + det("Address", r.address) + det("Notes", r.notes) + "</div>" +
+    '<div class="row g-3 mb-3"><div class="col-6"><div class="stat"><i class="bi bi-box-seam"></i><div><div class="stat-label">Packs received</div><div class="stat-value">' + num(packs) + '</div></div></div></div>' +
+    '<div class="col-6"><div class="stat"><i class="bi bi-wallet2"></i><div><div class="stat-label">Total spent</div><div class="stat-value">' + naira(spent) + "</div></div></div></div></div>" +
+    '<h3 class="h6">Products supplied</h3><div class="table-responsive mb-3"><table class="table table-sm"><thead><tr><th>Product</th><th class="text-end">Packs</th><th class="text-end">Spent</th></tr></thead><tbody>' +
+    (Object.keys(by).map(n => "<tr><td>" + esc(n) + '</td><td class="text-end">' + num(by[n].packs) + '</td><td class="text-end">' + naira(by[n].spent) + "</td></tr>").join("") || '<tr><td colspan="3" class="text-muted">Nothing received from this supplier yet.</td></tr>') + "</tbody></table></div>" +
+    '<h3 class="h6">Delivery history</h3><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Date</th><th>Product</th><th class="text-end">Packs</th><th class="text-end">Cost per pack</th><th>Reference</th></tr></thead><tbody>' +
+    (data.map(b => "<tr><td>" + fmtDate(b.received_on) + "</td><td>" + esc(b.products ? b.products.name : "—") + '</td><td class="text-end">' + num(b.qty_received) + '</td><td class="text-end">' + naira(b.unit_cost) + "</td><td>" + esc(b.reference || "—") + "</td></tr>").join("") || '<tr><td colspan="5" class="text-muted">No deliveries yet.</td></tr>') + "</tbody></table></div>";
+}
+$("rows").addEventListener("click", e => {
+  const b = e.target.closest("[data-v],[data-e]"); if (!b) return;
+  const r = all.find(x => x.id == (b.dataset.v || b.dataset.e)); b.dataset.e ? openForm(r) : view(r);
+});
+
+(async () => {
+  const me = await requireAuth("owner"); if (!me) return;
+  renderShell("suppliers", me); load();
+})();
+</script>
+</body>
+</html>

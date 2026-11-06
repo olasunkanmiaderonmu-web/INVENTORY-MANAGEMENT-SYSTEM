@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expenses</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<nav class="sidebar" id="sb" aria-label="Main"></nav>
+<main class="main" id="content">
+  <div class="topbar">
+    <button class="btn btn-outline-secondary d-lg-none" aria-label="Open menu" onclick="sb.classList.toggle('open')"><i class="bi bi-list"></i></button>
+    <h1 class="h4 mb-0">Expenses</h1><span id="who" class="text-muted small"></span>
+  </div>
+  <div class="row g-3 mb-3">
+    <div class="col-md-6"><div class="stat bad"><i class="bi bi-receipt"></i><div><div class="stat-label">Total expenses (current filter, voided excluded)</div><div class="stat-value" id="total">—</div></div></div></div>
+    <div class="col-md-6 d-flex align-items-center justify-content-md-end"><button class="btn btn-brand" id="btnAdd"><i class="bi bi-plus-lg"></i> Add expense</button></div>
+  </div>
+  <div class="panel mb-3"><div class="row g-2">
+    <div class="col-md-3"><label class="form-label small" for="fCat">Category</label><select id="fCat" class="form-select"><option value="">All categories</option></select></div>
+    <div class="col-6 col-md-2"><label class="form-label small" for="fFrom">From</label><input id="fFrom" type="date" class="form-control"></div>
+    <div class="col-6 col-md-2"><label class="form-label small" for="fTo">To</label><input id="fTo" type="date" class="form-control"></div>
+    <div class="col-md-3 d-flex align-items-end"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="fVoid"><label class="form-check-label small" for="fVoid">Show voided expenses</label></div></div>
+  </div></div>
+  <div class="panel"><div class="table-responsive"><table class="table table-sm align-middle">
+    <caption class="visually-hidden">Expenses, newest first</caption>
+    <thead><tr><th>Date</th><th>Category</th><th>Description</th><th class="text-end">Amount</th><th>Status</th><th></th></tr></thead>
+    <tbody id="rows"></tbody></table></div>
+    <div class="d-flex justify-content-between align-items-center"><span class="small text-muted" id="count"></span>
+    <div class="btn-group"><button class="btn btn-outline-secondary btn-sm" id="prev">Previous</button><button class="btn btn-outline-secondary btn-sm" id="next">Next</button></div></div>
+  </div>
+</main>
+
+<div class="modal fade" id="mExp" tabindex="-1" aria-labelledby="mExpT"><div class="modal-dialog"><form class="modal-content" id="fExp" novalidate>
+  <div class="modal-header"><h2 class="modal-title h5" id="mExpT">Add expense</h2><button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="row g-3">
+    <div class="col-12"><label class="form-label" for="cat">Category *</label><select id="cat" class="form-select" required></select></div>
+    <div class="col-6"><label class="form-label" for="amt">Amount (₦) *</label><input id="amt" type="number" min="0.01" step="0.01" class="form-control" required></div>
+    <div class="col-6"><label class="form-label" for="edate">Date</label><input id="edate" type="date" class="form-control"></div>
+    <div class="col-12"><label class="form-label" for="desc">Description</label><input id="desc" class="form-control" placeholder="e.g. Truck hire for Coca-Cola delivery"></div>
+  </div></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-brand" id="save">Save expense</button></div>
+</form></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script><script src="js/auth.js"></script><script src="js/utils.js"></script><script src="js/layout.js"></script>
+<script>
+const $ = id => document.getElementById(id), PAGE = 15, modal = id => bootstrap.Modal.getOrCreateInstance($(id));
+const CATS = { transportation: "Transportation", rent: "Rent", electricity: "Electricity", salaries: "Staff salaries", loading_offloading: "Loading and offloading", other: "Other" };
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos" }).format(new Date());
+let page = 0, rows = [], key = crypto.randomUUID();
+
+function filt(q) {
+  if ($("fCat").value) q = q.eq("category", $("fCat").value);
+  if ($("fFrom").value) q = q.gte("expense_date", $("fFrom").value);
+  if ($("fTo").value) q = q.lte("expense_date", $("fTo").value);
+  return q;
+}
+async function total() {
+  let sum = 0, from = 0;
+  for (;;) {
+    const { data, error } = await filt(db.from("expenses").select("amount").eq("is_void", false)).order("id").range(from, from + 999);
+    if (error) return toast(error.message, "error");
+    sum += data.reduce((a, r) => a + Number(r.amount), 0);
+    if (data.length < 1000) break; from += 1000;
+  }
+  $("total").textContent = naira(sum);
+}
+async function load() {
+  let q = filt(db.from("expenses").select("*", { count: "exact" }));
+  if (!$("fVoid").checked) q = q.eq("is_void", false);
+  const { data, count, error } = await q.order("expense_date", { ascending: false }).order("id", { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
+  if (error) return toast(error.message + " (Did you run the Phase 7 SQL?)", "error");
+  rows = data;
+  $("rows").innerHTML = data.map(r => "<tr" + (r.is_void ? ' class="text-muted"' : "") + "><td>" + fmtDate(r.expense_date) + "</td><td>" + esc(CATS[r.category]) + "</td><td>" + esc(r.description || "—") +
+    (r.is_void ? '<div class="small">Voided: ' + esc(r.void_reason) + "</div>" : "") + '</td><td class="text-end fw-semibold' + (r.is_void ? " text-decoration-line-through" : "") + '">' + naira(r.amount) + "</td><td>" +
+    (r.is_void ? '<span class="badge text-bg-secondary">Voided</span>' : '<span class="badge text-bg-success">Recorded</span>') + "</td><td class='text-end'>" +
+    (r.is_void ? "" : '<button class="btn btn-sm btn-outline-danger" data-x="' + r.id + '">Void</button>') + "</td></tr>").join("") || '<tr><td colspan="6" class="text-center text-muted py-4">No expenses found.</td></tr>';
+  $("count").textContent = count ? "Showing " + (page * PAGE + 1) + "-" + Math.min((page + 1) * PAGE, count) + " of " + count : "";
+  $("prev").disabled = page === 0; $("next").disabled = (page + 1) * PAGE >= count;
+}
+const reload = () => { page = 0; load(); total(); };
+
+$("btnAdd").onclick = () => { $("fExp").reset(); $("edate").value = today; modal("mExp").show(); };
+$("fExp").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!($("amt").value > 0)) return toast("Enter the amount.", "error");
+  $("save").disabled = true;
+  const { error } = await db.from("expenses").insert({ category: $("cat").value, amount: +$("amt").value, expense_date: $("edate").value || today, description: $("desc").value.trim() || null, client_key: key });
+  $("save").disabled = false;
+  if (error && error.code !== "23505") return toast(error.message, "error");
+  key = crypto.randomUUID(); modal("mExp").hide(); toast("Expense recorded."); reload();
+});
+$("rows").addEventListener("click", async e => {
+  const b = e.target.closest("[data-x]"); if (!b) return;
+  const r = rows.find(x => x.id == b.dataset.x);
+  const reason = prompt("Why are you voiding this " + naira(r.amount) + " " + CATS[r.category] + " expense? (required)"); if (!reason) return;
+  if (!confirm("Void this expense? It will no longer count in your profit figures, but it stays in the history.")) return;
+  const { error } = await db.rpc("void_expense", { p_id: r.id, p_reason: reason });
+  if (error) return toast(error.message, "error");
+  toast("Expense voided."); load(); total();
+});
+
+["fCat", "fFrom", "fTo", "fVoid"].forEach(i => $(i).addEventListener("change", reload));
+$("prev").onclick = () => { page--; load(); }; $("next").onclick = () => { page++; load(); };
+(async () => {
+  const me = await requireAuth("owner"); if (!me) return; renderShell("expenses", me);
+  const opts = Object.entries(CATS).map(([k, v]) => '<option value="' + k + '">' + v + "</option>").join("");
+  $("fCat").innerHTML += opts; $("cat").innerHTML = opts; load(); total();
+})();
+</script>
+</body>
+</html>

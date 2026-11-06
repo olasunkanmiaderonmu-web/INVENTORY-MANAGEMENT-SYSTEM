@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<nav class="sidebar" id="sb" aria-label="Main"></nav>
+<main class="main" id="content">
+  <div class="topbar">
+    <button class="btn btn-outline-secondary d-lg-none" aria-label="Open menu" onclick="sb.classList.toggle('open')"><i class="bi bi-list"></i></button>
+    <h1 class="h4 mb-0">Settings</h1><span id="who" class="text-muted small"></span>
+  </div>
+  <div class="row g-3">
+    <div class="col-lg-6"><form class="panel" id="f" novalidate>
+      <h2 class="h6">Business profile</h2>
+      <div class="mb-3"><label class="form-label" for="name">Store name *</label><input id="name" class="form-control" maxlength="60" required></div>
+      <div class="mb-3"><label class="form-label" for="logo">Logo (PNG or JPG, under 150 KB)</label><input id="logo" type="file" accept="image/png,image/jpeg" class="form-control">
+        <div class="mt-2" id="prev" aria-live="polite"></div><button type="button" class="btn btn-sm btn-outline-danger mt-2 d-none" id="rmLogo">Remove logo</button></div>
+      <button class="btn btn-brand" id="save">Save settings</button>
+    </form></div>
+    <div class="col-lg-6"><div class="panel">
+      <h2 class="h6">Backup your records</h2>
+      <p class="small">Downloads one Excel file with every product, sale, stock movement, customer, payment, expense and audit entry. Do this <strong>every week</strong> and keep a copy on your phone or Google Drive.</p>
+      <button class="btn btn-brand" id="bk"><i class="bi bi-download"></i> Download backup (Excel)</button>
+      <p class="small text-muted mt-2 mb-3" id="bkStatus" role="status" aria-live="polite"></p>
+      <div class="alert alert-secondary small mb-0" role="note">The backup file is for safekeeping and reading. It is not a one-click restore. Supabase also keeps its own backups on paid plans, which are described in the go-live guide.</div>
+    </div></div>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="js/config.js"></script><script src="js/auth.js"></script><script src="js/utils.js"></script><script src="js/layout.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos" }).format(new Date());
+let logo = null;
+function showLogo() {
+  $("prev").innerHTML = logo ? '<img src="' + esc(logo) + '" alt="Current logo" style="max-height:64px">' : '<span class="text-muted small">No logo set.</span>';
+  $("rmLogo").classList.toggle("d-none", !logo);
+}
+$("logo").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (f.size > 150 * 1024) { toast("That image is larger than 150 KB. Choose a smaller one.", "error"); e.target.value = ""; return; }
+  const r = new FileReader(); r.onload = () => { logo = r.result; showLogo(); }; r.readAsDataURL(f);
+});
+$("rmLogo").onclick = () => { logo = null; $("logo").value = ""; showLogo(); };
+$("f").addEventListener("submit", async e => {
+  e.preventDefault(); const name = $("name").value.trim();
+  if (!name) return toast("Enter the store name.", "error");
+  $("save").disabled = true;
+  const { error } = await db.from("business_settings").update({ store_name: name, logo, updated_at: new Date().toISOString() }).eq("id", 1);
+  $("save").disabled = false;
+  if (error) return toast(error.message + " (Did you run the Phase 10 SQL?)", "error");
+  toast("Settings saved."); setTimeout(() => location.reload(), 800);
+});
+
+const TABLES = [["Products", "products"], ["Suppliers", "suppliers"], ["Customers", "customers"], ["Sales", "sales"], ["Customer payments", "customer_payments"],
+  ["Stock received", "stock_batches"], ["Stock movements", "inventory_movements"], ["Expenses", "expenses"], ["Audit log", "audit_logs"]];
+async function all(table) {
+  let out = [], from = 0;
+  for (;;) { const { data, error } = await db.from(table).select("*").order("id").range(from, from + 999); if (error) throw error; out = out.concat(data); if (data.length < 1000) break; from += 1000; }
+  return out;
+}
+$("bk").onclick = async () => {
+  $("bk").disabled = true; const wb = XLSX.utils.book_new();
+  try {
+    for (const [name, table] of TABLES) {
+      $("bkStatus").textContent = "Reading " + name + "...";
+      const rows = (await all(table)).map(r => { const o = {}; for (const k in r) o[k] = r[k] !== null && typeof r[k] === "object" ? JSON.stringify(r[k]) : r[k]; return o; });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name);
+    }
+    XLSX.writeFile(wb, "backup-" + today + ".xlsx"); $("bkStatus").textContent = "Backup downloaded. Keep a copy somewhere safe.";
+  } catch (e) { toast(e.message, "error"); $("bkStatus").textContent = "Backup failed."; }
+  $("bk").disabled = false;
+};
+(async () => {
+  const me = await requireAuth("owner"); if (!me) return; renderShell("settings", me);
+  const { data } = await db.from("business_settings").select("*").eq("id", 1).maybeSingle();
+  if (data) { $("name").value = data.store_name; logo = data.logo; }
+  showLogo();
+})();
+</script>
+</body>
+</html>
