@@ -1,0 +1,239 @@
+:root {
+    --navy: #333333;
+    --navy-2: #4a4a4a;
+    --green: #FF6700;
+    --bg: #f2f4f7;
+    --amber: #f2b705;
+    --red: #d64545;
+    --ink: #1b2433
+}
+
+body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
+}
+
+.btn-brand {
+    background: var(--green);
+    border-color: var(--green);
+    color: #111;
+    font-weight: 600
+}
+
+.btn-brand:hover,
+.btn-brand:focus {
+    background: #e55c00;
+    border-color: #e55c00;
+    color: #111
+}
+
+.login-wrap {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr
+}
+
+.login-side {
+    background: var(--navy);
+    color: #fff;
+    padding: 3rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end
+}
+
+.login-side h1 {
+    font-size: 2.4rem;
+    max-width: 14ch;
+    line-height: 1.1
+}
+
+.login-form {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    background: #fff
+}
+
+.login-form form {
+    width: 100%;
+    max-width: 360px
+}
+
+@media(max-width:768px) {
+    .login-wrap {
+        grid-template-columns: 1fr
+    }
+
+    .login-side {
+        padding: 2rem;
+        min-height: 30vh
+    }
+}
+
+.sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 240px;
+    background: var(--navy);
+    color: #cfd8e6;
+    padding: 1rem;
+    overflow-y: auto;
+    transition: transform .2s;
+    z-index: 1030
+}
+
+.sidebar .brand {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.1rem;
+    padding: .5rem .75rem 1rem
+}
+
+.sidebar a {
+    display: flex;
+    gap: .65rem;
+    align-items: center;
+    color: #cfd8e6;
+    text-decoration: none;
+    padding: .6rem .75rem;
+    border-radius: .4rem
+}
+
+.sidebar a:hover,
+.sidebar a.active {
+    background: var(--navy-2);
+    color: #fff
+}
+
+.sidebar a.disabled {
+    opacity: .45;
+    pointer-events: none
+}
+
+.main {
+    margin-left: 240px;
+    padding: 1.5rem
+}
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.25rem
+}
+
+@media(max-width:992px) {
+    .sidebar {
+        transform: translateX(-100%)
+    }
+
+    .sidebar.open {
+        transform: none
+    }
+
+    .main {
+        margin-left: 0
+    }
+}
+
+.panel {
+    background: #fff;
+    border-radius: .6rem;
+    padding: 1.1rem;
+    border: 1px solid #e3e7ee;
+    height: 100%
+}
+
+.stat {
+    background: #fff;
+    border: 1px solid #e3e7ee;
+    border-left: 4px solid var(--navy);
+    border-radius: .6rem;
+    padding: 1rem;
+    display: flex;
+    gap: .9rem;
+    align-items: center
+}
+
+.stat.warn {
+    border-left-color: var(--amber)
+}
+
+.stat.bad {
+    border-left-color: var(--red)
+}
+
+.stat i {
+    font-size: 1.5rem;
+    color: var(--navy)
+}
+
+.stat-label {
+    font-size: .8rem;
+    color: #667085
+}
+
+.stat-value {
+    font-size: 1.35rem;
+    font-weight: 700
+}
+
+a {
+    color: #b34700
+}
+
+.sidebar a {
+    color: #e8e8e8
+}
+
+.sidebar a.active {
+    border-left: 4px solid #FF6700;
+    background: #4a4a4a
+}
+
+.sidebar .bi {
+    color: #FF6700
+}
+
+:focus-visible {
+    outline: 3px solid #FF6700;
+    outline-offset: 2px
+}
+
+.skip {
+    position: absolute;
+    left: -999px
+}
+
+.skip:focus {
+    left: 8px;
+    top: 8px;
+    background: #fff;
+    padding: .5rem;
+    z-index: 2000
+}
+
+.login-side h1 {
+    color: #FF6700
+}
+
+
+@media print{
+  body *{visibility:hidden}
+  #receipt,#receipt *,#statement,#statement *,#report,#report *{visibility:visible}
+  #receipt,#statement,#report{position:absolute;left:0;top:0;width:100%}
+}
+
+/* PHASE 10: dark mode and small screens */
+body{background:var(--bs-tertiary-bg)}
+.panel,.stat{background:var(--bs-body-bg);border-color:var(--bs-border-color)}
+.login-form{background:var(--bs-body-bg)}
+.stat-label{color:var(--bs-secondary-color)}
+[data-bs-theme=dark] a{color:#ff9d57}
+[data-bs-theme=dark] .sidebar a{color:#e8e8e8}
+[data-bs-theme=dark] .stat i{color:#ff9d57}
+.topbar{flex-wrap:wrap;gap:.5rem}
+@media(max-width:576px){.main{padding:1rem}.stat-value{font-size:1.15rem}.modal-dialog{margin:.5rem}}
