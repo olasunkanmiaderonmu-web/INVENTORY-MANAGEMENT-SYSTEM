@@ -4,7 +4,7 @@ const cfg = window.APP_CONFIG;
 const configured = cfg.SUPABASE_URL.startsWith("https://") && !cfg.SUPABASE_ANON_KEY.startsWith("PASTE");
 const db = configured ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
 
-function goLogin(reason) { location.replace("login.html?reason=" + encodeURIComponent(reason)); }
+function goLogin(reason) { location.replace("index.html?reason=" + encodeURIComponent(reason)); }
 
 // Call at the top of every protected page. Pass "owner" for owner-only pages.
 async function requireAuth(role) {
