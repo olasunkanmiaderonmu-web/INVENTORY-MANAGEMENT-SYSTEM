@@ -31,7 +31,7 @@ function renderShell(active, p) {
     window.__menuClose = true;
     document.addEventListener("click", e => {
       const s = document.getElementById("sb");
-      if (s.classList.contains("open") && !s.contains(e.target) && !e.target.closest('[aria-label="Open menu"]')) s.classList.remove("open");
+           if (s.classList.contains("open") && !s.contains(e.target) && !e.target.closest(".topbar")) s.classList.remove("open");
     });
   }
 
