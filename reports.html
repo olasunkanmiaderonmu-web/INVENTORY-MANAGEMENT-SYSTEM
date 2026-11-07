@@ -66,8 +66,7 @@ const cost = r => N(r.qty) * N(r.unit_cost || 0);
 const R = {
   sales: { label: "Sales report (daily, weekly, monthly, annual)", dates: 1, prod: 1, group: 1, run: async f => {
     const d = await all(salesQ(f)), g = {};
-    d.forEach(r => { const k = keyOf(r.sale_date, f.group), x = g[k] = g[k] || { n: 0, q: 0, rev: 0, cogs: 0 }; x.n++; x.q += N(r.qty); x.rev += N(r.total); x.cogs += cost(r); });
-    return { cols: [{ k: "p", l: "Period", t: "text" }, { k: "n", l: "Transactions", t: "num", s: 1 }, { k: "q", l: "Packs sold", t: "num", s: 1 }, { k: "rev", l: "Revenue", t: "money", s: 1 }, { k: "cogs", l: "Cost of goods", t: "money", s: 1 }, { k: "gp", l: "Gross profit", t: "money", s: 1 }],
+    d.forEach(r => { const k = keyOf(r.sale_date, f.group), x = g[k] = g[k] || { n: 0, q: 0, rev: 0, cogs: 0, refs: new Set() }; if (!x.refs.has(r.ref)) { x.refs.add(r.ref); x.n++; } x.q += N(r.qty); x.rev += N(r.total); x.cogs += cost(r); });    return { cols: [{ k: "p", l: "Period", t: "text" }, { k: "n", l: "Transactions", t: "num", s: 1 }, { k: "q", l: "Packs sold", t: "num", s: 1 }, { k: "rev", l: "Revenue", t: "money", s: 1 }, { k: "cogs", l: "Cost of goods", t: "money", s: 1 }, { k: "gp", l: "Gross profit", t: "money", s: 1 }],
       rows: Object.keys(g).sort().map(k => ({ p: labelOf(k, f.group), ...g[k], gp: g[k].rev - g[k].cogs })) };
   } },
   inventory: { label: "Product inventory report", prod: 1, run: async f => {
@@ -104,8 +103,7 @@ const R = {
   } },
   supplier: { label: "Supplier purchase report", dates: 1, prod: 1, run: async f => {
     const d = await all(batchQ(f)), g = {};
-    d.forEach(b => { const n = b.suppliers ? b.suppliers.name : "No supplier recorded", x = g[n] = g[n] || { n: 0, q: 0, t: 0 }; x.n++; x.q += b.qty_received; x.t += b.qty_received * N(b.unit_cost); });
-    return { cols: [{ k: "s", l: "Supplier", t: "text" }, { k: "n", l: "Deliveries", t: "num", s: 1 }, { k: "q", l: "Packs received", t: "num", s: 1 }, { k: "t", l: "Total spent", t: "money", s: 1 }], rows: Object.keys(g).sort().map(n => ({ s: n, ...g[n] })) };
+    d.forEach(r => { const n = r.staff_name || "Unknown", x = g[n] = g[n] || { n: 0, q: 0, rev: 0, gp: 0, refs: new Set() }; if (!x.refs.has(r.ref)) { x.refs.add(r.ref); x.n++; } x.q += N(r.qty); x.rev += N(r.total); x.gp += N(r.total) - cost(r); });    return { cols: [{ k: "s", l: "Supplier", t: "text" }, { k: "n", l: "Deliveries", t: "num", s: 1 }, { k: "q", l: "Packs received", t: "num", s: 1 }, { k: "t", l: "Total spent", t: "money", s: 1 }], rows: Object.keys(g).sort().map(n => ({ s: n, ...g[n] })) };
   } },
   staff: { label: "Staff performance report", dates: 1, run: async f => {
     const d = await all(salesQ({ from: f.from, to: f.to })), g = {};

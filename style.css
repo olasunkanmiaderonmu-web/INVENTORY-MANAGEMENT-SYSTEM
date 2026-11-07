@@ -221,19 +221,99 @@ a {
 }
 
 
-@media print{
-  body *{visibility:hidden}
-  #receipt,#receipt *,#statement,#statement *,#report,#report *{visibility:visible}
-  #receipt,#statement,#report{position:absolute;left:0;top:0;width:100%}
+@media print {
+    body * {
+        visibility: hidden
+    }
+
+    #receipt,
+    #receipt *,
+    #statement,
+    #statement *,
+    #report,
+    #report * {
+        visibility: visible
+    }
+
+    #receipt,
+    #statement,
+    #report {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%
+    }
 }
 
 /* PHASE 10: dark mode and small screens */
-body{background:var(--bs-tertiary-bg)}
-.panel,.stat{background:var(--bs-body-bg);border-color:var(--bs-border-color)}
-.login-form{background:var(--bs-body-bg)}
-.stat-label{color:var(--bs-secondary-color)}
-[data-bs-theme=dark] a{color:#ff9d57}
-[data-bs-theme=dark] .sidebar a{color:#e8e8e8}
-[data-bs-theme=dark] .stat i{color:#ff9d57}
-.topbar{flex-wrap:wrap;gap:.5rem}
-@media(max-width:576px){.main{padding:1rem}.stat-value{font-size:1.15rem}.modal-dialog{margin:.5rem}}
+body {
+    background: var(--bs-tertiary-bg)
+}
+
+.panel,
+.stat {
+    background: var(--bs-body-bg);
+    border-color: var(--bs-border-color)
+}
+
+.login-form {
+    background: var(--bs-body-bg)
+}
+
+.stat-label {
+    color: var(--bs-secondary-color)
+}
+
+[data-bs-theme=dark] a {
+    color: #ff9d57
+}
+
+[data-bs-theme=dark] .sidebar a {
+    color: #e8e8e8
+}
+
+[data-bs-theme=dark] .stat i {
+    color: #ff9d57
+}
+
+.topbar {
+    flex-wrap: wrap;
+    gap: .5rem
+}
+
+@media(max-width:576px) {
+    .main {
+        padding: 1rem
+    }
+
+    .stat-value {
+        font-size: 1.15rem
+    }
+
+    .modal-dialog {
+        margin: .5rem
+    }
+}
+
+
+.login-logo {
+    display: block;
+    width: 100%;
+    max-width: 440px;
+    max-height: 320px;
+    height: auto;
+    object-fit: contain;
+    object-position: left bottom;
+    align-self: flex-start;
+    margin: 0 0 .5rem;
+    background: none;
+    padding: 0;
+    border-radius: 0
+}
+
+@media(max-width:768px) {
+    .login-logo {
+        max-width: 220px;
+        max-height: 140px
+    }
+}

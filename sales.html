@@ -31,19 +31,23 @@
   </div></div>
   <div class="panel"><div class="table-responsive"><table class="table table-sm align-middle">
     <caption class="visually-hidden">Sales, newest first</caption>
-    <thead><tr><th>Transaction</th><th>Date</th><th>Product</th><th class="text-end">Packs</th><th class="text-end">Total</th><th>Payment</th><th>Staff</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Transaction</th><th>Date</th><th>Items</th><th class="text-end">Total</th><th>Payment</th><th>Staff</th><th>Status</th><th></th></tr></thead>
     <tbody id="rows"></tbody></table></div>
     <div class="d-flex justify-content-between align-items-center"><span class="small text-muted" id="count"></span>
     <div class="btn-group"><button class="btn btn-outline-secondary btn-sm" id="prev">Previous</button><button class="btn btn-outline-secondary btn-sm" id="next">Next</button></div></div>
   </div>
 </main>
 
-<div class="modal fade" id="mSale" tabindex="-1" aria-labelledby="mSaleT"><div class="modal-dialog"><form class="modal-content" id="fSale" novalidate>
+<div class="modal fade" id="mSale" tabindex="-1" aria-labelledby="mSaleT"><div class="modal-dialog modal-lg"><form class="modal-content" id="fSale" novalidate>
   <div class="modal-header"><h2 class="modal-title h5" id="mSaleT">New sale</h2><button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body"><div class="row g-3">
-    <div class="col-12"><label class="form-label" for="prod">Product *</label><select id="prod" class="form-select" required></select><div class="form-text" id="avail" aria-live="polite"></div></div>
-    <div class="col-6"><label class="form-label" for="qty">Packs sold *</label><input id="qty" type="number" min="1" step="1" class="form-control" required></div>
-    <div class="col-6"><label class="form-label" for="price">Price per pack (₦) *</label><input id="price" type="number" min="0" step="0.01" class="form-control" required></div>
+    <div class="col-12">
+      <div class="table-responsive"><table class="table table-sm align-middle mb-2">
+        <caption class="visually-hidden">Products in this sale</caption>
+        <thead><tr><th>Product</th><th style="width:100px">Packs</th><th style="width:140px">Price (₦)</th><th class="text-end">Line total</th><th><span class="visually-hidden">Remove</span></th></tr></thead>
+        <tbody id="cartRows"></tbody></table></div>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="addLine"><i class="bi bi-plus"></i> Add another product</button>
+    </div>
     <div class="col-12"><div class="alert alert-secondary py-2 mb-0" aria-live="polite">Total: <strong id="total">₦0.00</strong></div></div>
     <div class="col-6"><label class="form-label" for="pay">Payment method *</label><select id="pay" class="form-select"><option value="cash">Cash</option><option value="transfer">Bank transfer</option><option value="pos">POS</option><option value="credit">On credit (pay later)</option></select></div>
     <div class="col-6"><label class="form-label" for="sdate">Sale date</label><input id="sdate" type="date" class="form-control"></div>
@@ -66,11 +70,13 @@
 <script src="config.js"></script><script src="auth.js"></script><script src="utils.js"></script><script src="layout.js"></script>
 <script>
 const $ = id => document.getElementById(id), PAGE = 10, PAY = { cash: "Cash", transfer: "Bank transfer", pos: "POS", credit: "On credit" };
-let page = 0, me, prods = [], rows = [], key = crypto.randomUUID(), cur = null;
+let page = 0, me, prods = [], rows = [], key = crypto.randomUUID(), cur = null, cart = [];
+const blank = () => ({ pid: "", qty: "", price: "" });
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos" }).format(new Date());
 const month = today.slice(0, 7) + "-01";
 const modal = id => bootstrap.Modal.getOrCreateInstance($(id));
 const badge = s => s === "reversed" ? '<span class="badge text-bg-secondary">Reversed</span>' : '<span class="badge text-bg-success">Completed</span>';
+const lineTotal = l => (parseInt(l.qty) || 0) * (+l.price || 0);
 
 async function totals() {
   const t = await db.from("sales_view").select("total").eq("status", "completed").eq("sale_date", today);
@@ -80,17 +86,17 @@ async function totals() {
 }
 
 async function load() {
-  let q = db.from("sales_view").select("*", { count: "exact" });
+  let q = db.from("receipts_view").select("*", { count: "exact" });
   const s = $("fq").value.trim().replace(/[,()%]/g, ""); if (s) q = q.ilike("ref", "%" + s + "%");
   if ($("fFrom").value) q = q.gte("sale_date", $("fFrom").value); if ($("fTo").value) q = q.lte("sale_date", $("fTo").value);
-  if ($("fProd").value) q = q.eq("product_id", $("fProd").value); if ($("fStaff").value) q = q.eq("created_by", $("fStaff").value);
-  if ($("fStatus").value) q = q.eq("status", $("fStatus").value);
+  if ($("fProd").value) { const p = prods.find(x => String(x.id) === $("fProd").value); if (p) q = q.ilike("items", "%" + p.name.replace(/[\\%_]/g, "\\$&") + " x%"); }
+  if ($("fStaff").value) q = q.eq("created_by", $("fStaff").value); if ($("fStatus").value) q = q.eq("status", $("fStatus").value);
   const { data, count, error } = await q.order("created_at", { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
-  if (error) return toast(error.message, "error");
+  if (error) return toast(error.message + " (Did you run the Phase 11 SQL?)", "error");
   rows = data;
-  $("rows").innerHTML = data.map(r => "<tr><td>" + esc(r.ref) + "</td><td>" + fmtDate(r.sale_date) + "</td><td>" + esc(r.product_name) + '</td><td class="text-end">' + num(r.qty) +
-    '</td><td class="text-end fw-semibold">' + naira(r.total) + "</td><td>" + esc(PAY[r.payment_method]) + "</td><td>" + esc(r.staff_name || "—") + "</td><td>" + badge(r.status) +
-    '</td><td><button class="btn btn-sm btn-outline-secondary" data-v="' + r.id + '">View</button></td></tr>').join("") || '<tr><td colspan="9" class="text-center text-muted py-4">No sales found.</td></tr>';
+  $("rows").innerHTML = data.map(r => "<tr><td>" + esc(r.ref) + "</td><td>" + fmtDate(r.sale_date) + '</td><td><span class="d-inline-block text-truncate" style="max-width:260px" title="' + esc(r.items) + '">' + esc(r.items) + "</span></td>" +
+    '<td class="text-end fw-semibold">' + naira(r.total) + "</td><td>" + esc(PAY[r.payment_method]) + "</td><td>" + esc(r.staff_name || "—") + "</td><td>" + badge(r.status) +
+    '</td><td><button class="btn btn-sm btn-outline-secondary" data-v="' + esc(r.ref) + '">View</button></td></tr>').join("") || '<tr><td colspan="8" class="text-center text-muted py-4">No sales found.</td></tr>';
   $("count").textContent = count ? "Showing " + (page * PAGE + 1) + "-" + Math.min((page + 1) * PAGE, count) + " of " + count : "";
   $("prev").disabled = page === 0; $("next").disabled = (page + 1) * PAGE >= count;
 }
@@ -98,66 +104,98 @@ const reload = () => { page = 0; load(); };
 
 async function loadProducts() {
   const { data } = await db.from("products_status").select("id,name,sku,selling_price,current_stock").eq("is_archived", false).order("name"); prods = data || [];
-  $("prod").innerHTML = '<option value="">Select product</option>' + prods.map(p => '<option value="' + p.id + '"' + (p.current_stock === 0 ? " disabled" : "") + ">" + esc(p.name) + " (" + num(p.current_stock) + " left)" + (p.current_stock === 0 ? " - OUT OF STOCK" : "") + "</option>").join("");
   $("fProd").innerHTML = '<option value="">All products</option>' + prods.map(p => '<option value="' + p.id + '">' + esc(p.name) + "</option>").join("");
 }
 async function loadCustomers() {
   const { data } = await db.from("customers").select("id,name,phone").order("name");
   $("cid").innerHTML = '<option value="">None / walk-in</option>' + (data || []).map(c => '<option value="' + c.id + '">' + esc(c.name) + (c.phone ? " (" + esc(c.phone) + ")" : "") + "</option>").join("");
 }
-function calc() {
-  const p = prods.find(x => x.id == $("prod").value), q = parseInt($("qty").value) || 0, tot = q * (+$("price").value || 0);
-  $("total").textContent = naira(tot);
-  $("avail").textContent = p ? "Available: " + num(p.current_stock) + " packs" + (q > p.current_stock ? ". You are selling more than is available." : "") : "";
-  $("owed").textContent = naira(Math.max(0, tot - (+$("paid").value || 0)));
+
+/* ----- the cart ----- */
+const productOptions = sel => '<option value="">Select product</option>' + prods.map(p => '<option value="' + p.id + '"' + (p.current_stock === 0 ? " disabled" : "") + (String(p.id) === String(sel) ? " selected" : "") + ">" +
+  esc(p.name) + " (" + num(p.current_stock) + " left)" + (p.current_stock === 0 ? " - OUT OF STOCK" : "") + "</option>").join("");
+function drawCart() {
+  $("cartRows").innerHTML = cart.map((l, i) => '<tr data-i="' + i + '"><td><select class="form-select form-select-sm" data-f="pid" aria-label="Product for line ' + (i + 1) + '">' + productOptions(l.pid) + '</select><div class="form-text" data-av></div></td>' +
+    '<td><input type="number" min="1" step="1" class="form-control form-control-sm" data-f="qty" value="' + esc(l.qty) + '" aria-label="Packs for line ' + (i + 1) + '"></td>' +
+    '<td><input type="number" min="0" step="0.01" class="form-control form-control-sm" data-f="price" value="' + esc(l.price) + '" aria-label="Price for line ' + (i + 1) + '"></td>' +
+    '<td class="text-end" data-lt></td><td><button type="button" class="btn btn-sm btn-outline-danger" data-rm="' + i + '" aria-label="Remove line ' + (i + 1) + '"><i class="bi bi-x-lg"></i></button></td></tr>').join("");
+  calc();
 }
+function calc() {
+  let tot = 0;
+  document.querySelectorAll("#cartRows tr").forEach(tr => {
+    const l = cart[tr.dataset.i], p = prods.find(x => String(x.id) === String(l.pid)), q = parseInt(l.qty) || 0, av = tr.querySelector("[data-av]");
+    tr.querySelector("[data-lt]").textContent = naira(lineTotal(l)); tot += lineTotal(l);
+    av.textContent = p ? "Available: " + num(p.current_stock) + (q > p.current_stock ? " (not enough)" : "") : "";
+    av.className = "form-text" + (p && q > p.current_stock ? " text-danger" : "");
+  });
+  $("total").textContent = naira(tot); $("owed").textContent = naira(Math.max(0, tot - (+$("paid").value || 0))); return tot;
+}
+$("cartRows").addEventListener("input", e => { const f = e.target.dataset.f, tr = e.target.closest("tr"); if (!tr || !f || f === "pid") return; cart[tr.dataset.i][f] = e.target.value; calc(); });
+$("cartRows").addEventListener("change", e => {
+  if (e.target.dataset.f !== "pid") return;
+  const tr = e.target.closest("tr"), l = cart[tr.dataset.i], v = e.target.value;
+  if (v && cart.some((x, j) => j != tr.dataset.i && String(x.pid) === v)) { toast("That product is already on this sale. Change its packs instead.", "error"); e.target.value = l.pid || ""; return; }
+  l.pid = v; const p = prods.find(x => String(x.id) === v);
+  if (p) { l.price = p.selling_price; if (!l.qty) l.qty = 1; tr.querySelector('[data-f="price"]').value = l.price; tr.querySelector('[data-f="qty"]').value = l.qty; }
+  calc();
+});
+$("cartRows").addEventListener("click", e => { const b = e.target.closest("[data-rm]"); if (!b) return; cart.splice(+b.dataset.rm, 1); if (!cart.length) cart.push(blank()); drawCart(); });
+$("addLine").onclick = () => { cart.push(blank()); drawCart(); };
 function togglePay() {
   const credit = $("pay").value === "credit";
   $("paidWrap").classList.toggle("d-none", !credit); $("walkWrap").classList.toggle("d-none", credit);
   $("cidHint").textContent = credit ? "(required for credit)" : "(optional)"; calc();
 }
-$("prod").addEventListener("change", () => { const p = prods.find(x => x.id == $("prod").value); if (p) { $("price").value = p.selling_price; $("qty").max = p.current_stock; } calc(); });
-["qty", "price", "paid"].forEach(i => $(i).addEventListener("input", calc)); $("pay").addEventListener("change", togglePay);
-$("btnNew").onclick = () => { $("fSale").reset(); $("sdate").value = today; togglePay(); modal("mSale").show(); };
+$("paid").addEventListener("input", calc); $("pay").addEventListener("change", togglePay);
+$("btnNew").onclick = () => { $("fSale").reset(); $("sdate").value = today; cart = [blank()]; drawCart(); togglePay(); modal("mSale").show(); };
 
 $("fSale").addEventListener("submit", async e => {
   e.preventDefault();
-  const p = prods.find(x => x.id == $("prod").value), q = parseInt($("qty").value), credit = $("pay").value === "credit", tot = q * (+$("price").value || 0);
-  if (!p) return toast("Choose a product.", "error");
-  if (!(q > 0)) return toast("Enter at least 1 pack.", "error");
-  if (q > p.current_stock) return toast("Only " + p.current_stock + " pack(s) of " + p.name + " left.", "error");
-  if ($("price").value === "") return toast("Enter the price per pack.", "error");
+  const items = [], credit = $("pay").value === "credit";
+  for (let i = 0; i < cart.length; i++) {
+    const l = cart[i], p = prods.find(x => String(x.id) === String(l.pid)), q = parseInt(l.qty);
+    if (!p) return toast("Line " + (i + 1) + ": choose a product.", "error");
+    if (!(q > 0)) return toast("Line " + (i + 1) + ": enter at least 1 pack.", "error");
+    if (l.price === "" || +l.price < 0) return toast("Line " + (i + 1) + ": enter the price per pack.", "error");
+    if (q > p.current_stock) return toast("Line " + (i + 1) + ": only " + p.current_stock + " pack(s) of " + p.name + " left.", "error");
+    items.push({ product_id: p.id, qty: q, unit_price: +l.price });
+  }
+  const tot = items.reduce((a, x) => a + x.qty * x.unit_price, 0), paid = +$("paid").value || 0;
   if (credit && !$("cid").value) return toast("Choose the customer for a credit sale. Add them on the Customers page first.", "error");
-  if (credit && ((+$("paid").value || 0) > tot || (+$("paid").value || 0) < 0)) return toast("The amount paid now cannot be more than the total.", "error");
+  if (credit && (paid < 0 || paid > tot)) return toast("The amount paid now cannot be more than the total.", "error");
   $("save").disabled = true;
-  const { data: id, error } = await db.rpc("record_sale", { p_product_id: p.id, p_qty: q, p_unit_price: +$("price").value, p_payment: $("pay").value,
-    p_customer: $("cust").value.trim() || null, p_sale_date: $("sdate").value || null, p_notes: $("notes").value.trim() || null, p_client_key: key,
-    p_customer_id: $("cid").value ? +$("cid").value : null, p_amount_paid: credit ? (+$("paid").value || 0) : null });
+  const { data: ref, error } = await db.rpc("record_receipt", { p_items: items, p_payment: $("pay").value, p_customer_id: $("cid").value ? +$("cid").value : null,
+    p_customer: $("cust").value.trim() || null, p_sale_date: $("sdate").value || null, p_notes: $("notes").value.trim() || null, p_amount_paid: credit ? paid : null, p_client_key: key });
   $("save").disabled = false;
   if (error) return toast(error.message, "error");
   toast("Sale recorded. Stock updated."); key = crypto.randomUUID(); modal("mSale").hide();
-  await loadProducts(); totals(); load();
-  const { data } = await db.from("sales_view").select("*").eq("id", id).single(); if (data) showReceipt(data);
+  await loadProducts(); totals(); load(); showReceipt(ref);
 });
 
-function showReceipt(r) {
-  cur = r; const line = (k, v) => "<tr><th class='fw-normal text-muted'>" + k + "</th><td class='text-end'>" + v + "</td></tr>";
-  const credit = r.payment_method === "credit";
-  $("receipt").innerHTML = '<div class="text-center mb-2"><strong>' + esc(window.APP_CONFIG.STORE_NAME) + '</strong><div class="small text-muted">Sales receipt</div></div><table class="table table-sm mb-2">' +
-    line("Transaction", esc(r.ref)) + line("Date", fmtDate(r.sale_date)) + line("Product", esc(r.product_name)) + line("Quantity", num(r.qty) + " pack(s)") + line("Price per pack", naira(r.unit_price)) +
-    line("<strong>Total</strong>", "<strong>" + naira(r.total) + "</strong>") + line("Payment", esc(PAY[r.payment_method])) +
-    (credit ? line("Paid now", naira(r.amount_paid)) + line("<strong>Balance owed</strong>", "<strong>" + naira(r.total - r.amount_paid) + "</strong>") : "") +
-    (r.customer_name ? line("Customer", esc(r.customer_name)) : "") +
-    line("Served by", esc(r.staff_name || "—")) + line("Status", r.status === "reversed" ? "REVERSED" : "Completed") + "</table>" +
-    (r.status === "reversed" ? '<div class="alert alert-secondary py-2 mb-0">Reversed. Reason: ' + esc(r.reverse_reason) + "</div>" : '<p class="text-center small mb-0">Thank you for your patronage.</p>');
-  $("btnRev").classList.toggle("d-none", !(me.role === "owner" && r.status === "completed")); modal("mRec").show();
+/* ----- receipt, print, reverse ----- */
+async function showReceipt(ref) {
+  const { data, error } = await db.from("sales_view").select("*").eq("ref", ref).order("id");
+  if (error || !data.length) return toast(error ? error.message : "Sale not found.", "error");
+  const f = data[0], tot = data.reduce((a, r) => a + Number(r.total), 0), paid = data.reduce((a, r) => a + Number(r.amount_paid), 0), credit = f.payment_method === "credit";
+  cur = { ref, status: f.status };
+  const line = (k, v) => "<tr><th class='fw-normal text-muted'>" + k + "</th><td class='text-end'>" + v + "</td></tr>";
+  $("receipt").innerHTML = '<div class="text-center mb-2"><strong>' + esc(window.APP_CONFIG.STORE_NAME) + '</strong><div class="small text-muted">Sales receipt</div></div>' +
+    '<table class="table table-sm mb-2">' + line("Transaction", esc(f.ref)) + line("Date", fmtDate(f.sale_date)) + "</table>" +
+    '<table class="table table-sm mb-2"><thead><tr><th>Item</th><th class="text-end">Packs</th><th class="text-end">Price</th><th class="text-end">Total</th></tr></thead><tbody>' +
+    data.map(r => "<tr><td>" + esc(r.product_name) + '</td><td class="text-end">' + num(r.qty) + '</td><td class="text-end">' + naira(r.unit_price) + '</td><td class="text-end">' + naira(r.total) + "</td></tr>").join("") + "</tbody></table>" +
+    '<table class="table table-sm mb-2">' + line("<strong>Total</strong>", "<strong>" + naira(tot) + "</strong>") + line("Payment", esc(PAY[f.payment_method])) +
+    (credit ? line("Paid now", naira(paid)) + line("<strong>Balance owed</strong>", "<strong>" + naira(tot - paid) + "</strong>") : "") +
+    (f.customer_name ? line("Customer", esc(f.customer_name)) : "") + line("Served by", esc(f.staff_name || "—")) + line("Status", f.status === "reversed" ? "REVERSED" : "Completed") + "</table>" +
+    (f.status === "reversed" ? '<div class="alert alert-secondary py-2 mb-0">Reversed. Reason: ' + esc(f.reverse_reason) + "</div>" : '<p class="text-center small mb-0">Thank you for your patronage.</p>');
+  $("btnRev").classList.toggle("d-none", !(me.role === "owner" && f.status === "completed")); modal("mRec").show();
 }
-$("rows").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) showReceipt(rows.find(x => x.id == b.dataset.v)); });
+$("rows").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) showReceipt(b.dataset.v); });
 $("btnPrint").onclick = () => window.print();
 $("btnRev").onclick = async () => {
   const reason = prompt("Why are you reversing sale " + cur.ref + "? (required)"); if (!reason) return;
-  if (!confirm("Reverse this sale? " + cur.qty + " pack(s) of " + cur.product_name + " will go back into stock.")) return;
-  const { error } = await db.rpc("reverse_sale", { p_sale_id: cur.id, p_reason: reason });
+  if (!confirm("Reverse this whole sale? Every product on it will go back into stock.")) return;
+  const { error } = await db.rpc("reverse_receipt", { p_ref: cur.ref, p_reason: reason });
   if (error) return toast(error.message, "error");
   toast("Sale reversed. Stock restored."); modal("mRec").hide(); await loadProducts(); totals(); load();
 };

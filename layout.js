@@ -16,7 +16,8 @@ function renderShell(active, p) {
     ["reports", "reports.html", "file-earmark-bar-graph", "Reports", 1],
     ["staff", "staff.html", "person-badge", "Staff", 1],
     ["audit", "audit.html", "shield-check", "Audit log", 1],
-    ["settings", "settings.html", "gear", "Settings", 1]
+    ["settings", "settings.html", "gear", "Settings", 1],
+    ["account", "account.html", "key", "Change password"]
   ].filter(i => owner || !i[4]);
   document.getElementById("sb").innerHTML =
     '<div class="brand">' + esc(window.APP_CONFIG.STORE_NAME) + "</div>" +
@@ -31,7 +32,7 @@ function renderShell(active, p) {
     window.__menuClose = true;
     document.addEventListener("click", e => {
       const s = document.getElementById("sb");
-           if (s.classList.contains("open") && !s.contains(e.target) && !e.target.closest(".topbar")) s.classList.remove("open");
+      if (s.classList.contains("open") && !s.contains(e.target) && !e.target.closest(".topbar")) s.classList.remove("open");
     });
   }
 
@@ -42,7 +43,7 @@ function renderShell(active, p) {
     document.getElementById("themeBtn").onclick = () => {
       const t = document.documentElement.getAttribute("data-bs-theme") === "dark" ? "light" : "dark";
       document.documentElement.setAttribute("data-bs-theme", t);
-      try { localStorage.setItem("theme", t); } catch (e) {}
+      try { localStorage.setItem("theme", t); } catch (e) { }
       if (window.Chart) location.reload();
     };
     db.from("products_status").select("id", { count: "exact", head: true }).eq("is_archived", false).neq("status", "ok").then(({ count }) => {
